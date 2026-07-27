@@ -1,5 +1,17 @@
 **任务目标**：将 `raw_data/` 目录下所有 PNG 图片中的外贸客户名片/文档信息，经过 OCR 识别和语义理解，最终整理为一份标准的 CSV 表格。
 
+### 脚本文档清单
+
+| 脚本文件 | 说明文档 |
+| --- | --- |
+| `code/01-filename-index.py` | [文件索引构建](code/py-doc.md#01-filename-indexpy) |
+| `code/02-write-OCR.py` | [OCR 结果写入](code/py-doc.md#02-write-ocrpy) |
+| `code/02-OCR-check.py` | [OCR 验证](code/py-doc.md#02-ocr-checkpy) |
+| `code/03-tmp-csv.py` | [临时 CSV 生成](code/py-doc.md#03-tmp-csvpy) |
+| `code/03-write-feature.py` | [特征提取结果写入](code/py-doc.md#03-write-featurepy) |
+| `code/03-NLP-check.py` | [NLP 验证](code/py-doc.md#03-nlp-checkpy) |
+| `code/04-merge.py` | [数据合并](code/py-doc.md#04-mergepy) |
+
 ## 通用约定（所有步骤均适用）
 
 - **路径基准**：所有相对路径均相对于本仓库根目录。
