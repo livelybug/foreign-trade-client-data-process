@@ -53,7 +53,7 @@
     - `processed_data/txts/<原文件名>.txt` 存在；
     - 文件大小 > 0；
     - 去除首尾空白后仍含可见字符（非空字符串）。
-- **重试**：失败时主 Agent 立即用相同方式重试三次；仍失败则记 `0`。
+- **重试**：失败时主 Agent 等待 3 秒后启动新的子 Agent 实例重试，共重试三次；仍失败则记 `0`。
 - **主 Agent 写入 checklist**：`names-checklist.csv` → OCR 列填入 `1` 或 `0`。
 - **所有文件处理结束后的验证**：
     - `names-checklist.csv` → OCR 列每一行都已填入 `0` 或 `1`。
@@ -61,13 +61,13 @@
 
 - **执行**：
     - 本步OCR相关部分由agent执行，其余调python执行，见以下。
-    - 主 Agent 写入 checklist使用对应的python文件：`code/02-write-OCR.py`. python代码必须等待直到确保checklist没有被其他程序以可写方式打开。
+    - 主 Agent 写入 checklist使用对应的python文件：`code/02-write-OCR.py`。写入时使用 `filelock` 库对 `names-checklist.csv` 加排他锁，避免并发写入冲突。
     - **所有文件处理结束后的验证** 使用对应的python文件：`code/02-OCR-check.py`
 
 ## 第三步：关键信息抽取与结构化（并行处理，最大并行=6）
 
 - **主 Agent 调度 NLP 子 Agent**，针对 OCR 成功的每个 TXT 文件启动一个独立实例。
-- **输入**：单个 TXT 文件（`processed_data/txts/<原文件名>.txt`）；字段表 `raw_data/1.client_features.csv` 的**第一行**（作为输出列名）。
+- **输入**：单个 TXT 文件（`processed_data/txts/<原文件名>.txt`）；字段表 `raw_data/1.client_features.csv` 的**表头行**（即第一行，作为输出列名）。
 - **子 Agent 动作**：
     1. 阅读文本内容，基于语义理解提取关键字段。
     2. 严格按字段表的列顺序与列名输出，**不要对列做任何改动**。
@@ -86,7 +86,7 @@
     - 共 2 行（第 1 行表头 + 第 1 行数据）；
     - 表头列数 == 字段表列数（逐列完全一致，包括列名、列顺序、列分隔符样式）；
     - 数据行列数 == 表头列数。
-- **重试**：判定失败时主 Agent 立即重试三次；仍失败则记 `0`。
+- **重试**：判定失败时主 Agent 等待 3 秒后启动新的子 Agent 实例重试，共重试三次；仍失败则记 `0`。
 - **主 Agent 写入 checklist**：`names-checklist.csv` → Feature Extract 列填入 `1` 或 `0`。
 - **所有文件处理结束后的验证**：
     - `names-checklist.csv` → Feature Extract 列每一行都已填入 `0` 或 `1`。
@@ -94,8 +94,8 @@
 
 - **执行**：
     - 本步相关部分由agent执行，其余调python执行，见以下。
-    - 生成一个独立的临时 CSV 文件; 判定契约检验: 使用对应的python文件：`code/03-tmp-csv.py`
-    - 主 Agent 写入 checklist使用对应的python文件：`code/03-write-feature.py`. python代码必须等待直到确保checklist没有被其他程序以可写方式打开。
+    - 子 Agent 调用python生成独立的临时 CSV 文件，并在同一脚本中完成判定契约检验：`code/03-tmp-csv.py`
+    - 主 Agent 写入 checklist使用对应的python文件：`code/03-write-feature.py`。写入时使用 `filelock` 库对 `names-checklist.csv` 加排他锁，避免并发写入冲突。
     - **所有文件处理结束后的验证** 使用对应的python文件：`code/03-NLP-check.py`
 
 ## 第四步：数据合并（最终汇总）
