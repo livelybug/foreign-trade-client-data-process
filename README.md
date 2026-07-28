@@ -176,30 +176,19 @@ uv run python code/01-filename-index.py --raw-dir processed_data --output /tmp/x
 echo "exit=$?"   # 期望 exit=1
 ```
 
----
+### 4.5 自动测试
 
-## 5. 后续步骤（预览）
-
-01 步骤通过后，可继续跑 02 / 03 / 04。完整规范见 `code/py-doc.md`：
-
-| 步骤 | 脚本 | 触发方式 |
-|------|------|----------|
-| 02 | `code/02-write-OCR.py` | 每个 OCR 子 Agent 完成后调用一次，标记单行 OCR 状态 |
-| 02 校验 | `code/02-OCR-check.py` | 所有 02 写完后做一致性检查 |
-| 03 | `code/03-tmp-csv.py` + `code/03-write-feature.py` | NLP 阶段并行 |
-| 03 校验 | `code/03-NLP-check.py` | NLP 全部完成后做一致性检查 |
-| 04 | `code/04-merge.py` | 最后合并为 `final.csv` |
-
-> 02 / 03 阶段会有 N 个并行的子 Agent 写入 checklist，因此 `02-write-OCR.py` 和 `03-write-feature.py` 用 `filelock` 加排他锁（`code/requirements.txt` 中的 `filelock` 依赖为它们服务）。
+```
+uv run pytest code/test/test_01_filename_index.py -v
+```
 
 ---
 
-## 6. 故障排查
+## 5. 故障排查
 
 | 现象 | 可能原因 | 解决 |
 |------|----------|------|
 | `ModuleNotFoundError: No module named 'filelock'` | 没装依赖 / 用了非 venv 的 python | `uv pip install -r code/requirements.txt`，并确认命令走 `uv run python` |
-| `ModuleNotFoundError: No module named 'csv'` | 极少见的 Python < 2.7 环境 | 升级到 Python 3.10+ |
 | 行尾变 `\r\n` | 用普通 `open()` 替代了 `csv` 模块 | 检查脚本里是否有 `open(..., newline="")` 和 `lineterminator="\n"` |
 | checklist 写入后中文乱码 | 文件被外部编辑器另存为 GBK | 始终用 UTF-8 打开/写入；不要用 Excel 直接保存 |
 | 02 阶段 lock 超时 | 两个进程同时抢锁 / 死锁 | 检查 `.lock` 文件是否残留，必要时 `rm -f processed_data/names-checklist.csv.lock` |
