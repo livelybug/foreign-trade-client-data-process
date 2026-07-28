@@ -63,14 +63,22 @@ def main() -> None:
         print(f"[ERROR] checklist missing required columns: {header}", file=sys.stderr)
         sys.exit(1)
 
+    # 先扫描一遍:只要存在任何非空值,就允许其它行为"未处理"的空值
+    if not any((row.get(OCR_COL) or "").strip() for row in rows):
+        print("[ERROR] OCR 列全为空,无任何 OCR 处理结果", file=sys.stderr)
+        sys.exit(1)
+
     errors: list[str] = []
     expected_ocr_one: set[str] = set()
 
     for idx, row in enumerate(rows, start=2):  # 行号从 2 开始(1 是表头)
         filename = row.get(FN_COL, "")
         status = (row.get(OCR_COL) or "").strip()
+        if status == "":
+            # 空值视为"未处理",跳过(只要存在其它非空行)
+            continue
         if status not in VALID_STATUS:
-            errors.append(f"row {idx}: OCR 列值非法或为空 (file={filename!r}, value={status!r})")
+            errors.append(f"row {idx}: OCR 列值非法 (file={filename!r}, value={status!r})")
             continue
         if status == "1":
             expected_ocr_one.add(filename)

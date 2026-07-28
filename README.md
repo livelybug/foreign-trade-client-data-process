@@ -178,17 +178,48 @@ echo "exit=$?"   # 期望 exit=1
 
 ### 4.5 自动测试
 
+`code/test/` 下有 7 个端到端测试文件，每个对应一个被测脚本，覆盖成功路径、错误路径，写脚本的还含并发路径。文件命名规则 `test_<脚本同名>.py`。
+
+测试机制：
+
+- `uv run --with pytest pytest` — uv 在临时 venv 里装 pytest 并运行，不依赖项目 `.venv` 是否就绪
+- 测试内部的 `_ensure_env` fixture 跑 `uv venv` + `uv pip install -r code/requirements.txt`，自动建项目 venv 和装 `filelock`
+- 测试用 `uv run python code/<script>.py ...` 跑被测脚本（自动走项目 venv）
+- 第一次跑会触发 venv 创建 + 装 filelock + 装 pytest；之后环境已就绪，直接进入测试
+
+按步骤分别跑：
+
 ```bash
-# 让 uv run 临时拉 pytest，pytest 启动后测试内部的 fixture 再去拉项目 venv 
-# uv run --with pytest pytest — uv 在临时 venv 里装 pytest 并运行，不依赖 .venv 是否就绪
-# 进入测试后，_ensure_env fixture 跑 uv venv + uv pip install -r code/requirements.txt 拉起项目 venv 和 filelock
-# ran_success fixture 用 uv run python code/01-filename-index.py ... 跑被测脚本（自动走项目 venv）
-# 第一次跑：会触发 venv 创建 + 装 filelock + 装 pytest
-# 之后跑：环境已就绪，直接进入测试
+# 步骤 01：文件索引构建（code/01-filename-index.py）
 uv run --with pytest pytest code/test/test_01_filename_index.py -v
+
+# 步骤 02：OCR 验证（code/02-OCR-check.py）
+uv run --with pytest pytest code/test/test_02_OCR_check.py -v
+
+# 步骤 02：OCR 结果写入（code/02-write-OCR.py）
+uv run --with pytest pytest code/test/test_02_write_OCR.py -v
+
+# 步骤 03：临时 CSV 生成（code/03-tmp-csv.py）
+uv run --with pytest pytest code/test/test_03_tmp_csv.py -v
+
+# 步骤 03：特征提取结果写入（code/03-write-feature.py）
+uv run --with pytest pytest code/test/test_03_write_feature.py -v
+
+# 步骤 03：NLP 验证（code/03-NLP-check.py）
+uv run --with pytest pytest code/test/test_03_NLP_check.py -v
+
+# 步骤 04：数据合并（code/04-merge.py）
+uv run --with pytest pytest code/test/test_04_merge.py -v
+```
+
+一键全跑：
+
+```bash
+uv run --with pytest pytest code/test/ -v
 ```
 
 ---
+
 
 ## 5. 故障排查
 
