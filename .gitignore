@@ -1,4 +1,6 @@
 .tmp
+*.csv.lock
+*.md.lock
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

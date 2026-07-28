@@ -11,6 +11,19 @@
 
 ---
 
+## 工具调用总则
+
+> 所有步骤提示词都遵循以下三条原则；具体落地细节见各步的"通用约定"。
+
+1. **尽量批量调用，尽量避免串行**：所有"独立、无依赖"的操作必须放进**同一条 tool 调用**里执行。
+   - 多操作令用 `;` / `&&` 或 `for` 循环串成**单条 Bash** → 一次执行。一次性输出 `[OK]/[MISSING]`
+   - 写 N 行 checklist → 把 N 个脚本调用串成单条 Bash
+   - **典型反例（禁止）**：N 个文件用 N 次 Bash 各做一次；`max_concurrency` 个子 Agent 完成后用 `max_concurrency` 次 Bash 各写一次 checklist
+2. **Python 调用必须走 `uv run`**：所有 `python code/*.py` 一律改为 `uv run python code/*.py`（详见 [README §2](../README.md)）。**禁止直接用 `python` 命令**。
+3. **并发上限取自配置文件**：第二步（OCR）与第三步（NLP）派发子 Agent 的并发数 `max_concurrency` 从仓库根 `pipeline.config.json` 读取；若该文件不存在或 `max_concurrency` 字段缺失，默认 6。启动相关步骤前先用 Read 工具读该文件取该值；后续分批、并发派发都按这个数走。
+
+---
+
 ## 提示词 1️⃣ — 第一步：文件索引构建
 
 ````markdown
@@ -39,21 +52,27 @@
    - `processed_data/`
    - `processed_data/txts/`
    - `processed_data/csvs/`
-2. 执行 `code/01-filename-index.py`：
+2. 执行 `code/01-filename-index.py`（必须走 `uv run`）：
    ```bash
-   python code/01-filename-index.py \
+   uv run python code/01-filename-index.py \
      --raw-dir raw_data \
      --output processed_data/names-checklist.csv
    ```
-3. 验证：
-   - `processed_data/names-checklist.csv` 已生成
-   - 第 1 行表头为 `Filename,OCR,Feature Extract`（3 列，UTF-8 无 BOM）
-   - 每一行第 1 列是 `raw_data/*.png` 的某个文件名（含 `.png`），按 ASCII 顺序排列
-   - 行数 == `raw_data/*.png` 的文件数
+3. **批量**验证（**单条 Bash** 一次性跑完 4 项检查；任一项 `[FAIL]` 立即 `exit 1`）：
+   ```bash
+   out=processed_data/names-checklist.csv
+   echo "--- check 1: exists ---";       [ -f "$out" ] && echo "[OK]" || { echo "[FAIL] missing"; exit 1; }
+   echo "--- check 2: header ---";       [ "$(head -n 1 "$out")" = "Filename,OCR,Feature Extract" ] && echo "[OK]" || { echo "[FAIL] header"; exit 1; }
+   echo "--- check 3: row_count ---";    [ "$(($(wc -l < "$out") - 1))" = "$(ls -1 raw_data/*.png | wc -l)" ] && echo "[OK]" || { echo "[FAIL] row_count"; exit 1; }
+   echo "--- check 4: order (ASCII) ---"; fp=$(ls -1 raw_data/*.png | head -n 1 | xargs basename); [ "$fp" = "$(sed -n '2p' "$out" | cut -d, -f1)" ] && echo "[OK]" || { echo "[FAIL] order"; exit 1; }
+   echo "--- all 4 checks passed ---"
+   ```
 
 # 通用约定（务必遵守）
 - 不要修改任何文件名（不去空格、不转小写、不做去重、不做编码转换）。
 - CSV 编码 UTF-8（无 BOM），行尾 `\n`，分隔符 `,`。
+- **批量调用，禁止串行**：4 项验证必须**单条 Bash** 一次跑完（见 §执行步骤 3），禁止拆成 4 次 Bash 串行。原则见文件顶部"工具调用总则"。
+- **Python 必须走 `uv run`**：`uv run python code/01-filename-index.py ...`，**禁止直接用 `python`**。
 
 # 完成后输出
 简明告知：
@@ -64,7 +83,7 @@
 
 ---
 
-## 提示词 2️⃣ — 第二步：OCR 文字提取（并行 6）
+## 提示词 2️⃣ — 第二步：OCR 文字提取
 
 ````markdown
 # 任务背景
@@ -82,8 +101,9 @@
 
 # 前置检查
 1. `processed_data/names-checklist.csv` 必须存在（来自第 1 步）。
-2. 读出 checklist 中所有 **OCR 列为空** 的 PNG 文件名，得到目标清单。
-3. 如果目标清单为空，直接跳到"全量验证"。
+2. 用 Read 工具读 `pipeline.config.json`，取 `max_concurrency` 作为本步并发上限（默认 6）。
+3. 读出 checklist 中所有 **OCR 列为空** 的 PNG 文件名，得到目标清单。
+4. 如果目标清单为空，直接跳到"全量验证"。
 
 # 子 Agent 提示词模板
 每个待处理的 PNG 都启动一个子 Agent 实例。把下面整段发给它（`{filename}` 替换成实际文件名）：
@@ -106,26 +126,30 @@
 ---
 
 # 主 Agent 调度流程
-1. 把目标清单按 **6 个一组** 分批。
-2. 每批并发派发 6 个 OCR 子 Agent（同一批 6 个子 Agent 同时启动）。
-3. 收集每个子 Agent 的回执：
-   - **成功**（txt 文件存在且非空且 strip 后非空）→ 调用：
+1. 把目标清单按 **`max_concurrency` 个一组** 分批。
+2. 每批并发派发 `max_concurrency` 个 OCR 子 Agent（同一批 `max_concurrency` 个子 Agent 同时启动）。
+3. 收集每个子 Agent 的回执，**批量**处理（单条 Bash 一次完成验证 + 写 checklist，**禁止逐个串行**）：
+   - 先用**单条 Bash `for` 循环**一次性检查 N 个 txt 是否存在 + 非空 + strip 后非空，输出 `[OK]/[MISSING]`：
      ```bash
-     python code/02-write-OCR.py \
-       --checklist processed_data/names-checklist.csv \
-       --filename "<PNG文件名>" \
-       --status 1
+     for f in "<f1>" "<f2>" ... "<fN>"; do
+       p="processed_data/txts/${f%.png}.txt"
+       if [ -s "$p" ] && [ -n "$(tr -d '[:space:]' < "$p")" ]; then echo "[OK] $f"; else echo "[MISSING/EMPTY] $f"; fi
+     done
      ```
-   - **失败** → 等 3 秒后重新派发新的子 Agent 实例（用同一份提示词）；最多重试 3 次；3 次仍失败记 0：
+   - 对成功的，把 N 个 `02-write-OCR.py --status 1` 用 `&&` 串成**单条 Bash** 一次跑完（必须走 `uv run`）, 比如：
      ```bash
-     python code/02-write-OCR.py \
-       --checklist processed_data/names-checklist.csv \
-       --filename "<PNG文件名>" \
-       --status 0
+     uv run python code/02-write-OCR.py --checklist processed_data/names-checklist.csv --filename "<f1>" --status 1 && \
+     uv run python code/02-write-OCR.py --checklist processed_data/names-checklist.csv --filename "<f2>" --status 1 && \
+     ...
      ```
-4. 全部处理完后，调用 `code/02-OCR-check.py` 验证：
+   - 对失败的，等 3 秒后重新派发新的子 Agent 实例（用同一份提示词）；最多重试 3 次；3 次仍失败，把 N 个失败的 `02-write-OCR.py --status 0` 串成**单条 Bash** 一次跑完（必须走 `uv run`）：
+     ```bash
+     uv run python code/02-write-OCR.py --checklist processed_data/names-checklist.csv --filename "<f1>" --status 0 && \
+     ...
+     ```
+4. 全部处理完后，调用 `code/02-OCR-check.py` 验证（**单条 Bash**，必须走 `uv run`）：
    ```bash
-   python code/02-OCR-check.py \
+   uv run python code/02-OCR-check.py \
      --checklist processed_data/names-checklist.csv \
      --txts-dir processed_data/txts/
    ```
@@ -134,7 +158,7 @@
 # 通用约定（务必遵守）
 - 不要修改任何文件名（含空格原样保留）。
 - 不要用 Bash 跑 OCR 工具。OCR 只通过 Read 工具 + Claude 视觉。
-- 子 Agent 并发上限 = 6；超过请分批。
+- 子 Agent 并发上限 = `pipeline.config.json` 中的 `max_concurrency`（默认 6）；超过请分批（每批 `max_concurrency` 个 `Agent` 工具写在同一个 message）。
 - 写 checklist 必须用 `code/02-write-OCR.py`（内部有 filelock）；不要直接修改 CSV。
 
 # 完成后输出
@@ -147,7 +171,7 @@
 
 ---
 
-## 提示词 3️⃣ — 第三步：关键信息抽取与结构化（并行 6）
+## 提示词 3️⃣ — 第三步：关键信息抽取与结构化
 
 ````markdown
 # 任务背景
@@ -164,48 +188,58 @@
 5. 全部完成后用 `code/03-NLP-check.py` 验证。
 
 # 前置检查
-1. 读 `raw_data/tg_features.csv` 第 1 行（表头），作为输出列名。**禁止增删改列**。
-   当前字段表头（14 列，固定不变）：
-   `公司名称,国家,客户类型,客户阶段,客户来源,公司网址,联系人姓名,电话,邮箱,感兴趣产品,价格敏感度,采购意向,阿里买家身份,跟进记录`
-2. 读 checklist 中所有 `OCR=1` 且 `Feature Extract` 为空的行，得到目标清单。
-3. 如果目标清单为空，跳到"全量验证"。
-4. 并发池上限 = 6。
+1. 用 Read 工具读 `pipeline.config.json`，取 `max_concurrency` 作为本步并发池上限（默认 6）。
+2. **一次性**读取字段表头到 shell 变量 `hdr`，作为本步全局唯一权威来源：
+   ```bash
+   hdr=$(head -n 1 raw_data/tg_features.csv)
+   [ -n "$hdr" ] || { echo "[FAIL] raw_data/tg_features.csv 表头为空"; exit 1; }
+   echo "[OK] hdr=$hdr"
+   ```
+   - 表头列数不固定；**禁止硬编码字段列表，禁止增删改列**。
+   - 后续每批派发 `max_concurrency` 个子 Agent 时，必须把 `$hdr` 字符串原文嵌入子 Agent 提示词模板里的 `FIELD_HEADER` 代码块；**子 Agent 不要再 Read `raw_data/tg_features.csv`**。
+3. 读 checklist 中所有 `OCR=1` 且 `Feature Extract` 为空的行，得到目标清单。
+4. 如果目标清单为空，跳到"全量验证"。
 
 # 子 Agent 提示词模板
-每个目标 txt 启动一个子 Agent 实例。把下面整段发给它（`{basename}` 替换成对应 txt 的 basename，不含扩展名）：
+每个目标 txt 启动一个子 Agent 实例。把下面整段发给它（`{basename}` 替换成对应 txt 的 basename，不含扩展名；`{header}` 替换为前置检查读到的 `hdr` 原文）：
 
 ---
 你是 NLP 子 Agent，负责把一份 OCR 文本抽取为结构化字段。
 
 **输入**：
 - 文本：`processed_data/txts/{basename}.txt`
-- 字段表：`raw_data/tg_features.csv`（取第 1 行作表头，14 列固定不变）
+- 字段表头：由主 Agent 注入到下方 `FIELD_HEADER` 代码块（**列数不固定，以代码块内容为准；不要再 Read `raw_data/tg_features.csv`**）
+
+   ```
+   <FIELD_HEADER>
+   {header}
+   </FIELD_HEADER>
+   ```
 
 **输出**：
 - CSV：`processed_data/csvs/{basename}.csv`（仅替换扩展名，文件名其它部分原样保留）
 - 不确定清单（如有）：`uncertain.md`（仓库根，由 `code/03-tmp-csv.py` 在契约通过后追加写入）
 
 请严格按下列步骤执行：
-1. 用 Read 工具读 `processed_data/txts/{basename}.txt`。
-2. 用 Read 工具读 `raw_data/tg_features.csv` 的第 1 行（表头），得到 14 个字段名（顺序与名称固定，不要改）。
-3. 基于文本内容抽取每个字段：
+1. 用 Read 工具读取 `processed_data/txts/{basename}.txt`。
+2. 基于 `FIELD_HEADER` 代码块中的字段列表（**顺序与名称以代码块为准，不要改**），抽取每个字段：
    - 文本中能直接对应到的字段就填原文（去除多余空白）。
    - **找不到的字段留空**（不要写 `null` / `N/A` / `-` / `<empty>`，更不要编造）。
    - 字段值含 `,` / `"` / 换行时，整个字段值用双引号包裹，内部 `"` 写成 `""`。
-4. 整理出两个东西：
-   - **values**：14 个字段值按表头顺序拼成 **单行 CSV 字符串**（用 csv 标准转义，可含逗号）。
+3. 整理出两个东西：
+   - **values**：所有字段值按 `FIELD_HEADER` 块顺序拼成 **单行 CSV 字符串**（用 csv 标准转义，可含逗号）。
    - **uncertain**（可选）：若有任何不确定点（无字段示例、无映射规则、多值歧义等），整理为 JSON 数组字符串。每项形如 `{"field":"<字段名>","question":"<你的疑问>","options":["候选1","候选2"],"value":"<你当前填的值>"}`；无不确定则传空串。
-5. 调 `code/03-tmp-csv.py` 写入（脚本会自动做契约检验：文件存在 / 共 2 行 / 表头匹配 / 数据列数匹配）：
+4. 调 `code/03-tmp-csv.py` 写入（脚本会自动做契约检验：文件存在 / 共 2 行 / 表头匹配 / 数据列数匹配；**必须走 `uv run`**）：
    ```bash
-   python code/03-tmp-csv.py \
+   uv run python code/03-tmp-csv.py \
      --txt "processed_data/txts/{basename}.txt" \
      --field-table raw_data/tg_features.csv \
-     --values "<第 4 步的 values 字符串>" \
+     --values "<第 3 步的 values 字符串>" \
      --output "processed_data/csvs/{basename}.csv" \
-     --uncertain "<第 4 步的 JSON 数组字符串 或 空>"
+     --uncertain "<第 3 步的 JSON 数组字符串 或 空>"
    ```
-6. 脚本 exit 0 即视为成功；否则视为失败。
-7. 除上述外不要输出其他内容；不要修改任何文件名。
+5. 脚本 exit 0 即视为成功；否则视为失败。
+6. 除上述外不要输出其他内容；不要修改任何文件名。
 
 完成后用一句话回执：
 - 成功 → `OK: processed_data/csvs/{basename}.csv`
@@ -213,26 +247,36 @@
 ---
 
 # 主 Agent 调度流程
-1. 把目标清单按 6 个一组分批。
-2. 每批并发派发 6 个 NLP 子 Agent。
-3. 收集每个子 Agent 的回执：
-   - **成功**（csv 存在 / 共 2 行 / 表头完全一致 / 数据列数一致）→ 调用：
+1. 把目标清单按 `max_concurrency` 个一组分批。
+2. 每批并发派发 `max_concurrency` 个 NLP 子 Agent。
+3. 收集每个子 Agent 的回执，**批量**处理（单条 Bash 一次完成验证 + 写 checklist，**禁止逐个串行**）：
+   - 先用**单条 Bash `for` 循环**一次性检查 N 个 csv（存在 / 共 2 行 / 表头完全一致 / 数据列数一致），输出 `[OK]/[BAD]`：
      ```bash
-     python code/03-write-feature.py \
-       --checklist processed_data/names-checklist.csv \
-       --filename "<PNG文件名>" \
-       --status 1
+      hdr=$(head -n 1 raw_data/tg_features.csv)                            # ① 取动态表头
+      for f in "<f1>" "<f2>" ... "<fN>"; do                                 # ② 遍历 N 个 PNG
+        c="processed_data/csvs/${f%.png}.csv"                              # ③ 拼出对应 csv 路径
+        if [ "$(wc -l < "$c" 2>/dev/null)" = "2" ] \                        # ④ 行数必须等于 2
+          && [ "$(head -n 1 "$c")" = "$hdr" ]; then \                      # ⑤ 表头必须等于字段表
+          echo "[OK] $f";                                                    #    → 打印 OK
+        else
+          echo "[BAD] $f";                                                   #    → 打印 BAD
+        fi
+      done
      ```
-   - **失败** → 等 3 秒后重新派发；最多 3 次；3 次仍失败记 0：
+   - 对成功的，把 N 个 `03-write-feature.py --status 1` 用 `&&` 串成**单条 Bash** 一次跑完（必须走 `uv run`）：
      ```bash
-     python code/03-write-feature.py \
-       --checklist processed_data/names-checklist.csv \
-       --filename "<PNG文件名>" \
-       --status 0
+     uv run python code/03-write-feature.py --checklist processed_data/names-checklist.csv --filename "<f1>" --status 1 && \
+     uv run python code/03-write-feature.py --checklist processed_data/names-checklist.csv --filename "<f2>" --status 1 && \
+     ...
      ```
-4. 全部处理完后调用 `code/03-NLP-check.py` 验证：
+   - 对失败的，等 3 秒后重新派发；最多 3 次；3 次仍失败，把 N 个失败的 `03-write-feature.py --status 0` 串成**单条 Bash** 一次跑完（必须走 `uv run`）：
+     ```bash
+     uv run python code/03-write-feature.py --checklist processed_data/names-checklist.csv --filename "<f1>" --status 0 && \
+     ...
+     ```
+4. 全部处理完后调用 `code/03-NLP-check.py` 验证（**单条 Bash**，必须走 `uv run`）：
    ```bash
-   python code/03-NLP-check.py \
+   uv run python code/03-NLP-check.py \
      --checklist processed_data/names-checklist.csv \
      --csvs-dir processed_data/csvs/
    ```
@@ -242,7 +286,9 @@
 - 列名与列顺序严格按字段表，**不要改**。
 - 子 Agent 写 csv **必须经 `code/03-tmp-csv.py`**，不要直接 Write csv。
 - 写 checklist **必须经 `code/03-write-feature.py`**。
-- 子 Agent 并发上限 = 6。
+- 子 Agent 并发上限 = `pipeline.config.json` 中的 `max_concurrency`（默认 6）（每批 `max_concurrency` 个 `Agent` 工具写在同一个 message）。
+- **批量调用，禁止串行**：子 Agent 内：txt 与 field table 的 Read 写在同一个 message 并发；主 Agent：把 N 个 `03-write-feature.py` 串成单条 Bash；验证 N 个 csv 用单条 Bash `for` 循环。**禁止 N 个文件 N 次 Bash 串行**。原则见文件顶部"工具调用总则"。
+- **Python 必须走 `uv run`**：`uv run python code/03-tmp-csv.py ...` / `uv run python code/03-write-feature.py ...` / `uv run python code/03-NLP-check.py ...`，**禁止直接用 `python`**。
 
 # 完成后输出
 简明告知：
@@ -271,9 +317,9 @@
 3. 若 `processed_data/final.csv` 已存在，**不要手动删**，脚本会自己删。
 
 # 执行步骤
-直接调用：
+直接调用（**必须走 `uv run`**）：
 ```bash
-python code/04-merge.py \
+uv run python code/04-merge.py \
   --checklist processed_data/names-checklist.csv \
   --csvs-dir processed_data/csvs/ \
   --output processed_data/final.csv
@@ -292,6 +338,7 @@ python code/04-merge.py \
 - 不要直接编辑 `final.csv`，**只能通过 `code/04-merge.py`**。
 - 不要修改任何文件名。
 - Feature Extract=0 的行不会进 final.csv。
+- **Python 必须走 `uv run`**：`uv run python code/04-merge.py ...`，**禁止直接用 `python`**。原则见文件顶部"工具调用总则"。
 
 # 完成后输出
 简明告知：

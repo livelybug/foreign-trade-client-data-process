@@ -27,6 +27,10 @@
     - 字段分隔符：英文逗号 `,`。
     - 引号规则：值含逗号 / 双引号 / 换行时，整字段用双引号包裹，内部双引号转义为 `""`。
     - 缺值字段：留空（连续两个逗号，或行首/行末的逗号），**不写 `null`、`N/A`、`-`、`<empty>` 等任何字面值**。
+- **并发配置**：
+    - 并发上限 `max_concurrency` 从仓库根的 `pipeline.config.json` 读取；若该文件不存在或 `max_concurrency` 字段缺失，默认 6。
+    - 适用步骤：第二步（OCR 子 Agent 并发）、第三步（NLP 子 Agent 并发）。
+    - 主 Agent 一次性派发（同一 message 中 `Agent` 工具调用）的子 Agent 数 = `max_concurrency`。
 
 ## 第一步：文件索引构建
 
@@ -51,8 +55,9 @@
     - 本步需求相应的python存放于`code/01-filename-index.py`
     - 主agent执行python文件
 
-## 第二步：OCR 文字提取（并行处理，最大并行=6）
+## 第二步：OCR 文字提取（并行处理）
 
+- **并发配置**：本步派发的子 Agent 并发数 = `pipeline.config.json` 中的 `max_concurrency`（默认 6）。开始本步前用 Read 工具读取该配置文件，确认 `max_concurrency` 值。
 - **主 Agent 调度 OCR 子 Agent**，针对 checklist 中每个文件启动一个独立实例。
 - **输入**：单个 PNG 图片文件。
 - **子 Agent 动作**：
@@ -76,8 +81,9 @@
     - 主 Agent 写入 checklist使用对应的python文件：`code/02-write-OCR.py`。写入时使用 `filelock` 库对 `names-checklist.csv` 加排他锁，避免并发写入冲突。
     - **所有文件处理结束后的验证** 使用对应的python文件：`code/02-OCR-check.py`
 
-## 第三步：关键信息抽取与结构化（并行处理，最大并行=6）
+## 第三步：关键信息抽取与结构化（并行处理）
 
+- **并发配置**：本步派发的子 Agent 并发数 = `pipeline.config.json` 中的 `max_concurrency`（默认 6）。开始本步前用 Read 工具读取该配置文件，确认 `max_concurrency` 值。
 - **主 Agent 调度 NLP 子 Agent**，针对 OCR 成功的每个 TXT 文件启动一个独立实例。
 - **输入**：单个 TXT 文件（`processed_data/txts/<原文件名>.txt`）；字段表 `raw_data/tg_features.csv` 的**表头行**（即第一行，作为输出列名）。
 - **子 Agent 动作**：
