@@ -178,8 +178,14 @@ echo "exit=$?"   # 期望 exit=1
 
 ### 4.5 自动测试
 
-```
-uv run pytest code/test/test_01_filename_index.py -v
+```bash
+# 让 uv run 临时拉 pytest，pytest 启动后测试内部的 fixture 再去拉项目 venv 
+# uv run --with pytest pytest — uv 在临时 venv 里装 pytest 并运行，不依赖 .venv 是否就绪
+# 进入测试后，_ensure_env fixture 跑 uv venv + uv pip install -r code/requirements.txt 拉起项目 venv 和 filelock
+# ran_success fixture 用 uv run python code/01-filename-index.py ... 跑被测脚本（自动走项目 venv）
+# 第一次跑：会触发 venv 创建 + 装 filelock + 装 pytest
+# 之后跑：环境已就绪，直接进入测试
+uv run --with pytest pytest code/test/test_01_filename_index.py -v
 ```
 
 ---
