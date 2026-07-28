@@ -1,16 +1,29 @@
-"""03-tmp-csv.py — 为单个 OCR 文本生成结构化临时 CSV。
+"""03-tmp-csv.py — 为单个 OCR 文本生成结构化临时 CSV,并收集"不确定"信息。
 
 用法:
+    # 基本用法(无不确定):
     python code/03-tmp-csv.py \\
         --txt processed_data/txts/2011-08-12 1.txt \\
         --field-table raw_data/tg_features.csv \\
         --values "ACME Corp,USA,分销商,,..." \\
         --output processed_data/csvs/2011-08-12 1.csv
 
+    # 携带不确定清单(子 Agent 把提取过程中遇到的不确定点以 JSON 数组传入):
+    python code/03-tmp-csv.py \\
+        --txt processed_data/txts/2011-08-12 1.txt \\
+        --field-table raw_data/tg_features.csv \\
+        --values "ACME Corp,USA,分销商,,..." \\
+        --output processed_data/csvs/2011-08-12 1.csv \\
+        --uncertain '[{"field":"价格敏感度","question":"期望是高/中/低 还是 高敏感?","options":["高/中/低","高敏感"]}]'
+
 行为:
     从 --field-table 读第 1 行作为表头,结合 --values 写 2 行 CSV
     (表头 + 数据)。写入后立刻做契约检验: 文件存在 / 共 2 行 /
     表头列数匹配 / 数据列数匹配。任一失败 exit 1。
+
+    若 --uncertain 提供非空 JSON 数组,则契约通过后再以 filelock
+    排他锁将不确定清单按文件分组追加写入 --uncertain-path(默认
+    仓库根 uncertain.md),供后续人工 review。
 """
 
 from __future__ import annotations
@@ -18,8 +31,14 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import sys
 from pathlib import Path
+
+from filelock import FileLock, Timeout
+
+UNCERTAIN_PATH_DEFAULT = Path("uncertain.md")
+LOCK_TIMEOUT = 60  # seconds
 
 
 def read_header(field_table: Path) -> list[str]:
@@ -92,12 +111,141 @@ def verify_contract(output: Path, expected_header: list[str]) -> None:
         sys.exit(1)
 
 
+def validate_uncertain(raw: str) -> list[dict]:
+    """解析并校验 --uncertain JSON 数组。
+
+    - 空串或 "[]" 返回空列表(调用方据此跳过写入)。
+    - 其它输入必须能 json.loads,且解析结果为 list。
+    - 每个元素必须为 dict,且包含 field(str) 与 question(str)。
+    - 可选字段 options(list[str])、value(str) 存在时类型必须正确。
+    任何校验失败 -> exit 1。
+    """
+    if raw == "" or raw.strip() == "[]":
+        return []
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(f"[ERROR] --uncertain 不是合法 JSON: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not isinstance(parsed, list):
+        print(
+            f"[ERROR] --uncertain 必须是 JSON 数组, 实际类型: {type(parsed).__name__}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    for idx, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            print(
+                f"[ERROR] --uncertain[{idx}] 不是对象, 实际类型: {type(item).__name__}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        field = item.get("field")
+        question = item.get("question")
+        if not isinstance(field, str) or field == "":
+            print(
+                f"[ERROR] --uncertain[{idx}].field 必填且为非空字符串",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if not isinstance(question, str) or question == "":
+            print(
+                f"[ERROR] --uncertain[{idx}].question 必填且为非空字符串",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if "options" in item:
+            options = item["options"]
+            if not isinstance(options, list) or not all(isinstance(o, str) for o in options):
+                print(
+                    f"[ERROR] --uncertain[{idx}].options 必须是字符串数组",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        if "value" in item:
+            value = item["value"]
+            if not isinstance(value, str):
+                print(
+                    f"[ERROR] --uncertain[{idx}].value 必须是字符串",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+    return parsed
+
+
+def format_uncertain_block(basename: str, items: list[dict]) -> str:
+    """把一组不确定条目渲染成 markdown 段落。
+
+    段落格式:
+        ## <basename>
+        <空行>
+        - **<field>**：<question>；候选：`o1` / `o2`；值：`v`
+        - ...
+
+    段末保留 1 个 '\\n',段间空行由 append_uncertain 控制。
+    """
+    lines: list[str] = [f"## {basename}", ""]
+    for item in items:
+        suffixes: list[str] = []
+        opts = item.get("options")
+        if opts:
+            suffixes.append("候选：" + " / ".join(f"`{o}`" for o in opts))
+        val = item.get("value")
+        if val:
+            suffixes.append(f"值：`{val}`")
+        line = f"- **{item['field']}**：{item['question']}"
+        if suffixes:
+            line += "；" + " / ".join(suffixes)
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def append_uncertain(path: Path, block: str) -> None:
+    """在 filelock 排他锁下将 markdown 段追加到 uncertain 文件。
+
+    - 文件不存在或为空:直接写 block。
+    - 文件非空:先补 '\\n\\n' 作为段间隔,再写 block。
+    lock 文件: <path>.lock(与 02-write-OCR / 03-write-feature 风格一致)。
+    """
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with FileLock(str(lock_path), timeout=LOCK_TIMEOUT):
+            need_sep = path.exists() and path.stat().st_size > 0
+            with path.open("a", encoding="utf-8") as f:
+                if need_sep:
+                    f.write("\n\n")
+                f.write(block)
+    except Timeout:
+        print(f"[ERROR] could not acquire lock: {lock_path}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as exc:
+        print(f"[ERROR] failed to write {path}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--txt", required=True, type=Path, help="OCR 文本文件路径(脚本内部读取以触发存在性检查)")
     parser.add_argument("--field-table", required=True, type=Path, help="字段表 CSV 路径(读其第 1 行作为表头)")
     parser.add_argument("--values", required=True, help="逗号分隔的提取字段值")
     parser.add_argument("--output", required=True, type=Path, help="输出临时 CSV 路径")
+    parser.add_argument(
+        "--uncertain",
+        required=False,
+        default="",
+        help='JSON 数组字符串,每项描述一个"不确定"点;空串或 "[]" 表示无。',
+    )
+    parser.add_argument(
+        "--uncertain-path",
+        required=False,
+        type=Path,
+        default=UNCERTAIN_PATH_DEFAULT,
+        help="不确定清单的追加目标文件路径(默认: 仓库根 uncertain.md)",
+    )
     args = parser.parse_args()
 
     if not args.txt.exists():
@@ -109,6 +257,14 @@ def main() -> None:
 
     write_tmp_csv(args.output, header, values)
     verify_contract(args.output, header)
+
+    # 契约通过后再处理 uncertain:契约失败时本段不执行,避免基于错误数据记录问题
+    items = validate_uncertain(args.uncertain)
+    if items:
+        basename = args.txt.stem
+        block = format_uncertain_block(basename, items)
+        append_uncertain(args.uncertain_path, block)
+        print(f"[OK] appended {len(items)} uncertain item(s) to {args.uncertain_path}")
 
     print(f"[OK] wrote tmp csv {args.output} ({len(values)} fields)")
 

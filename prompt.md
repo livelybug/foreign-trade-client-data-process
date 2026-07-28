@@ -105,8 +105,8 @@
     - 筛选 Feature Extract=1 的行，核对 `processed_data/csvs/` 下 csv 文件个数与文件名一一对应。
 
 - **执行**：
-    - 本步相关部分由agent执行，其余调python执行，见以下。
-    - 子 Agent 调用python生成独立的临时 CSV 文件，并在同一脚本中完成判定契约检验：`code/03-tmp-csv.py`
+    - 本步NLP相关部分由agent执行，其余调python执行，见以下。
+    - 子 Agent提取关键字段成功，调用python生成独立的临时 CSV 文件，并在同一脚本中完成判定契约检验；若有任何不确定都写入`uncertain.md`：`code/03-tmp-csv.py`
     - 主 Agent 写入 checklist使用对应的python文件：`code/03-write-feature.py`。写入时使用 `filelock` 库对 `names-checklist.csv` 加排他锁，避免并发写入冲突。
     - **所有文件处理结束后的验证** 使用对应的python文件：`code/03-NLP-check.py`
 

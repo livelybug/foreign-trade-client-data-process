@@ -90,7 +90,7 @@
 
 ### 功能描述
 
-为单个 OCR 文本生成结构化临时 CSV。从字段表中读取表头行，结合 NLP 子 Agent 提取的字段值，输出 2 行（表头 + 数据）的临时 CSV 文件。并在写入后执行判定契约检验。
+为单个 OCR 文本生成结构化临时 CSV。从字段表中读取表头行，结合 NLP 子 Agent 提取的字段值，输出 2 行（表头 + 数据）的临时 CSV 文件。并在写入后执行判定契约检验。契约通过后，若 `--uncertain` 提供了非空 JSON 数组，则以 filelock 排他锁将"不确定"清单按 `--txt` 文件名分组追加写入 `--uncertain-path`（默认 `uncertain.md`），供后续人工 review。
 
 ### 输入参数
 
@@ -100,12 +100,15 @@
 | `--field-table` | 字段表 CSV 路径（脚本读取其第一行作为表头） | `raw_data/tg_features.csv` |
 | `--values` | 逗号分隔的提取字段值 | `"ACME Corp,USA,分销商,,..."` |
 | `--output` | 输出的临时 CSV 文件路径 | `processed_data/csvs/2011-08-12 1.csv` |
+| `--uncertain` | JSON 数组字符串，每项描述一个"不确定"点；空串或 `[]` 表示无 | `'[{"field":"价格敏感度","question":"期望是高/中/低 还是 高敏感?","options":["高/中/低","高敏感"]}]'` |
+| `--uncertain-path` | 不确定清单的追加目标文件路径 | `uncertain.md`（默认） |
 
 ### 输出
 
 - **文件**：`--output` 指定的临时 CSV
 - **格式**：第 1 行为 `--field-table` 的表头行，第 2 行为 `--values` 的数据
 - **编码**：UTF-8（无 BOM），行尾 `\n`
+- **附加输出**（仅当 `--uncertain` 非空 JSON 数组时）：`--uncertain-path`（默认 `uncertain.md`）末尾追加一个 markdown 段落，每段以 `--txt` 的 stem（去 `.txt`）为一级标题，标题下用项目列表展示各不确定条目
 
 ### 判定契约检验（写入后自动执行）
 
@@ -116,12 +119,41 @@
 
 全部通过 → exit code 0；任一不通过 → exit code 1，输出具体失败原因。
 
+### 不确定清单追加（契约通过后自动执行）
+
+- **触发条件**：`--uncertain` 经 `validate_uncertain` 校验后得到非空 `list[dict]`。空串、`"[]"` 或校验失败均不进入追加流程。
+- **时机**：在 `verify_contract` 之后执行；契约失败（exit 1）时本段不执行，避免基于错误数据记录问题。
+- **并发安全**：使用 `filelock.FileLock` 排他锁，锁文件位于 `<uncertain-path>.lock`（例如 `uncertain.md.lock`），与 `02-write-OCR.py` / `03-write-feature.py` 风格一致；`timeout=60s`，超时 → exit 1。
+- **段落格式**：以 `--txt` 的 stem（去 `.txt`）作为一级标题（`## <stem>`），空行后是项目化列表，每项一条不确定点：
+
+  - 必填字段：`field`（非空 str）、`question`（非空 str）
+  - 可选字段：`options`（`list[str]`）渲染为"候选：`o1` / `o2`"；`value`（str）渲染为"值：`v`"
+  - 候选项与值都用反引号包裹；多个候选用 ` / ` 分隔；后缀与 `question` 之间用中文分号 `；` 分隔
+  - 段末保留 1 个 `\n`；段间空行（`\n\n`）由 `append_uncertain` 自动补齐；首段不补前导换行（文件为空时直接写 block）
+
+  示例（`--txt` = `2011-08-12 1.txt`，`--uncertain` 含两条）：
+
+  ```markdown
+  ## 2011-08-12 1
+
+  - **价格敏感度**：期望是高/中/低 还是 高敏感?；候选：`高/中/低` / `高敏感`
+  - **电话**：多个电话选哪个?；值：`+86-21-12345678; +86-13800138000`
+  ```
+
+- **追加规则**：
+  - 文件不存在或为空 → 直接写 block；
+  - 文件非空 → 先补 `\n\n` 作为段间隔，再写 block；
+  - 父目录不存在则自动创建（`parents=True, exist_ok=True`）。
+
 ### 错误处理
 
 - `--txt` 或 `--field-table` 不存在 → 报错退出
 - `--values` 的字段数与表头列数不匹配 → 报错退出
 - 输出目录无法创建或文件无法写入 → 报错退出
 - 判定契约检验失败 → 报错退出（exit code 1）
+- `--uncertain` JSON 解析失败或非 list 类型 → 报错退出（exit code 1）
+- `--uncertain` 元素缺 `field` / `question` 必填字段，或 `options` / `value` 类型不正确 → 报错退出（exit code 1）
+- filelock 获取超时（`Timeout`）或追加时 `OSError` → 报错退出（exit code 1）
 
 ---
 
