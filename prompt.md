@@ -79,7 +79,7 @@
 ## 第三步：关键信息抽取与结构化（并行处理，最大并行=6）
 
 - **主 Agent 调度 NLP 子 Agent**，针对 OCR 成功的每个 TXT 文件启动一个独立实例。
-- **输入**：单个 TXT 文件（`processed_data/txts/<原文件名>.txt`）；字段表 `raw_data/1.client_features.csv` 的**表头行**（即第一行，作为输出列名）。
+- **输入**：单个 TXT 文件（`processed_data/txts/<原文件名>.txt`）；字段表 `raw_data/tg_features.csv` 的**表头行**（即第一行，作为输出列名）。
 - **子 Agent 动作**：
     1. 阅读文本内容，基于语义理解提取关键字段。
     2. 严格按字段表的列顺序与列名输出，**不要对列做任何改动**。

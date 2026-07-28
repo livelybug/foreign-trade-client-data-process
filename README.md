@@ -79,7 +79,7 @@ python code/01-filename-index.py --raw-dir raw_data --output processed_data/name
 
 | 路径 | 用途 |
 |------|------|
-| `raw_data/` | 输入：`.png` 名片图片 + 字段表 `1.client_features.csv` |
+| `raw_data/` | 输入：`.png` 名片图片 + 字段表 `tg_features.csv` |
 | `processed_data/` | 生成的 checklist / txts / csvs / final.csv 都放这里 |
 | `processed_data/txts/` | 步骤 02 的 OCR 文本输出 |
 | `processed_data/csvs/` | 步骤 03 的结构化临时 CSV |
@@ -98,7 +98,7 @@ python code/01-filename-index.py --raw-dir raw_data --output processed_data/name
 
 ```
 raw_data/
-├── 1.client_features.csv          # 字段表（14 列）
+├── tg_features.csv          # 字段表（14 列）
 ├── 2011-08-12 1.png
 ├── 2011-08-12 2.png
 ├── 2011-08-14 1.png

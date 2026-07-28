@@ -97,7 +97,7 @@
 | 参数 | 含义 | 示例值 |
 |------|------|--------|
 | `--txt` | OCR 文本文件的路径（脚本内部读取） | `processed_data/txts/2011-08-12 1.txt` |
-| `--field-table` | 字段表 CSV 路径（脚本读取其第一行作为表头） | `raw_data/1.client_features.csv` |
+| `--field-table` | 字段表 CSV 路径（脚本读取其第一行作为表头） | `raw_data/tg_features.csv` |
 | `--values` | 逗号分隔的提取字段值 | `"ACME Corp,USA,分销商,,..."` |
 | `--output` | 输出的临时 CSV 文件路径 | `processed_data/csvs/2011-08-12 1.csv` |
 
