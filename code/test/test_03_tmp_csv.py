@@ -9,11 +9,13 @@
   * 成功路径: 简单值;带逗号/引号的 CSV 格式值(验证 RFC 4180 解析)
   * 错误路径: --txt 缺失 / --field-table 缺失 / --values 列数不匹配 / 字段表无表头
   * uncertain 成功路径: 写入 markdown 段(中文分号分隔)/ 段间空行 / no-op / 空数组
+  * uncertain 并发追加: 两个子进程真正并发写同一 uncertain.md,验证锁覆盖全程
   * uncertain 错误路径: JSON 解析失败 / 非 list / 元素非 dict / 缺必填 / options 类型错
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import csv
 import json
 import subprocess
@@ -259,6 +261,59 @@ def test_uncertain_value_only(setup: tuple[Path, Path, Path], tmp_path: Path) ->
     content = unc.read_text(encoding="utf-8")
     assert "值：`example.com`" in content
     assert "候选：" not in content
+
+
+def test_concurrent_uncertain_appends(
+    setup: tuple[Path, Path, Path], tmp_path: Path,
+) -> None:
+    """两个子进程真正并发追加到同一 uncertain.md: 验证锁覆盖 read-modify-write 全程。
+
+    append_uncertain 在 FileLock 内完成 exists/stat/open/write,串行化保证:
+    (1) 两个进程都成功返回 0
+    (2) 两段 markdown 都在文件中(无丢失更新)
+    (3) 段间用空行分隔(无拼接污染)
+    """
+    txt, ft, out = setup
+    unc = tmp_path / "unc.md"
+
+    item_a = json.dumps(
+        [{"field": "field-A", "question": "Q-A?"}], ensure_ascii=False,
+    )
+    item_b = json.dumps(
+        [{"field": "field-B", "question": "Q-B?"}], ensure_ascii=False,
+    )
+
+    p1 = subprocess.Popen(
+        ["uv", "run", "python", str(SCRIPT),
+         "--txt", str(txt), "--field-table", str(ft),
+         "--values", "a,b,c", "--output", str(out),
+         "--uncertain", item_a, "--uncertain-path", str(unc)],
+        cwd=PROJECT_ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    p2 = subprocess.Popen(
+        ["uv", "run", "python", str(SCRIPT),
+         "--txt", str(txt), "--field-table", str(ft),
+         "--values", "a,b,c", "--output", str(out),
+         "--uncertain", item_b, "--uncertain-path", str(unc)],
+        cwd=PROJECT_ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    # 真正并发等待:同时跑两个 communicate()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        f1 = ex.submit(p1.communicate)
+        f2 = ex.submit(p2.communicate)
+        _, err1 = f1.result()
+        _, err2 = f2.result()
+    assert p1.returncode == 0, f"p1 stderr={err1}"
+    assert p2.returncode == 0, f"p2 stderr={err2}"
+
+    content = unc.read_text(encoding="utf-8")
+    # 两段都落地 (锁覆盖全程,无丢失更新)
+    assert "field-A" in content, f"field-A 丢失: {content!r}"
+    assert "field-B" in content, f"field-B 丢失: {content!r}"
+    # 两段都出现
+    assert content.count("## in\n") == 2
+    # 段间空行
+    assert "\n\n## in\n" in content
 
 
 # ---- 错误路径 ----

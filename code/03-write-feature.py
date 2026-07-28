@@ -10,6 +10,9 @@
     与 02-write-OCR.py 对称,只是写入目标列从 OCR 换为 Feature Extract。
     同样在 filelock 下做"读 → 改 → 写",供并行的 NLP 子 Agent 安全写入。
     与 02-write-OCR.py 共用同一把 .lock 文件,以串行化两阶段的写。
+
+    修复: 之前版本只锁住读、写回在锁外,并发子 Agent 之间会丢失更新;
+    修复后 read-modify-write 全程在同一把锁内,串行化保证不丢更新。
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from filelock import FileLock, Timeout
 
 FEATURE_COL = "Feature Extract"
 VALID_STATUS = {"0", "1"}
-LOCK_TIMEOUT = 60  # seconds
+LOCK_TIMEOUT = 10  # seconds: 锁覆盖读-改-写全程后,串行排队依然很快
 
 
 def validate_status(status: str) -> None:
@@ -33,48 +36,50 @@ def validate_status(status: str) -> None:
 
 
 def update_row(checklist: Path, filename: str, status: str, col_idx: int) -> None:
+    """读-改-写全程在 FileLock 内,避免并发 NLP 子 Agent 之间的丢失更新。
+
+    之前版本只锁住读、写回在锁外:进程 A 读完释放锁后,进程 B 拿到锁
+    读到的可能是 A 已截断/未写完的中间状态,造成数据丢失。修复后,读
+    到的快照与写回的版本在同一个临界区内,串行化保证不丢更新。
+    """
     lock_path = checklist.with_suffix(checklist.suffix + ".lock")
     try:
         with FileLock(str(lock_path), timeout=LOCK_TIMEOUT):
             with checklist.open("r", encoding="utf-8", newline="") as f:
                 reader = csv.reader(f)
                 rows = list(reader)
+
+            if not rows:
+                print(f"[ERROR] checklist is empty: {checklist}", file=sys.stderr)
+                sys.exit(1)
+
+            header, *data = rows
+            target_row = None
+            target_idx = None
+            for idx, row in enumerate(data):
+                if row and row[0] == filename:
+                    target_row = row
+                    target_idx = idx
+                    break
+
+            if target_row is None:
+                print(f"[ERROR] filename not found in checklist: {filename!r}", file=sys.stderr)
+                sys.exit(1)
+
+            while len(target_row) <= col_idx:
+                target_row.append("")
+            target_row[col_idx] = status
+            data[target_idx] = target_row
+
+            with checklist.open("w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f, lineterminator="\n")
+                writer.writerow(header)
+                writer.writerows(data)
     except Timeout:
         print(f"[ERROR] could not acquire lock: {lock_path}", file=sys.stderr)
         sys.exit(1)
     except OSError as exc:
-        print(f"[ERROR] failed to read {checklist}: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    if not rows:
-        print(f"[ERROR] checklist is empty: {checklist}", file=sys.stderr)
-        sys.exit(1)
-
-    header, *data = rows
-    target_row = None
-    target_idx = None
-    for idx, row in enumerate(data):
-        if row and row[0] == filename:
-            target_row = row
-            target_idx = idx
-            break
-
-    if target_row is None:
-        print(f"[ERROR] filename not found in checklist: {filename!r}", file=sys.stderr)
-        sys.exit(1)
-
-    while len(target_row) <= col_idx:
-        target_row.append("")
-    target_row[col_idx] = status
-    data[target_idx] = target_row
-
-    try:
-        with checklist.open("w", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f, lineterminator="\n")
-            writer.writerow(header)
-            writer.writerows(data)
-    except OSError as exc:
-        print(f"[ERROR] failed to write {checklist}: {exc}", file=sys.stderr)
+        print(f"[ERROR] failed to access {checklist}: {exc}", file=sys.stderr)
         sys.exit(1)
 
 

@@ -10,11 +10,13 @@
 覆盖:
   * 成功路径: status=1 / status=0 两种合法值
   * 错误路径: 非法 status / 找不到 filename / checklist 缺失 / 缺 Feature Extract 列
-  * 并发路径: 两个子进程同时写不同行,验证互斥锁不超时
+  * 并发路径: 两个子进程真正并发写不同行,验证 FileLock 覆盖 read-modify-write
+    全程,无丢失更新
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import csv
 import subprocess
 from pathlib import Path
@@ -137,14 +139,16 @@ def test_missing_feature_column_exits_1(tmp_path: Path) -> None:
 # ---- 并发路径 ----
 
 def test_concurrent_writes_both_succeed(tmp_path: Path) -> None:
-    """两个子进程同时写不同行: 验证锁能防止 read 阶段竞争,文件结构未损坏。
+    """两个子进程真正并发写不同行:验证 FileLock 覆盖 read-modify-write 全程。
 
-    注: update_row 只在 read 阶段持锁,write 阶段在锁外 — 理论上 2 个进程同时
-    写不同行时,后写者可能覆盖前者的更新(loses-update)。本测试只验证
+    修复前,update_row 只在 read 阶段持锁、write 阶段在锁外,两个并发写
+    不同行时后写者会覆盖前者的更新(loses-update)。修复后锁覆盖全程,
+    应满足:
     (1) 两个进程都成功返回 0(锁能防 read 阶段竞争,无超时)
     (2) 文件结构(行数/表头)未损坏
     (3) 未触及行保持空
-    不对 img-1 / img-3 的最终值做强断言(避免 flaky)。
+    (4) img-1.png 的 Feature Extract=1、img-3.png 的 Feature Extract=0
+        都正确写入(无丢失更新)
     """
     p = tmp_path / "names-checklist.csv"
     _seed_checklist(p)
@@ -159,8 +163,12 @@ def test_concurrent_writes_both_succeed(tmp_path: Path) -> None:
          "--checklist", str(p), "--filename", "img-3.png", "--status", "0"],
         cwd=PROJECT_ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
-    _, err1 = p1.communicate()
-    _, err2 = p2.communicate()
+    # 真正并发等待:之前 p1.communicate() 串行等完才启动 p2,实际上未并发。
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        f1 = ex.submit(p1.communicate)
+        f2 = ex.submit(p2.communicate)
+        _, err1 = f1.result()
+        _, err2 = f2.result()
     assert p1.returncode == 0, f"p1 stderr={err1}"
     assert p2.returncode == 0, f"p2 stderr={err2}"
 
@@ -172,6 +180,6 @@ def test_concurrent_writes_both_succeed(tmp_path: Path) -> None:
     # 未触及行保持空 (Feature Extract 在第 3 列, index 2)
     assert rows[2][2] == ""  # img-2.png
     assert rows[4][2] == ""  # img-4.png
-    # 至少一个并发写入落地
-    touched = [rows[1][2], rows[3][2]]
-    assert any(v in ("0", "1") for v in touched), f"both concurrent writes lost: {touched}"
+    # 两个并发写入都正确落地 (修复后锁覆盖写阶段,loses-update 已修复)
+    assert rows[1] == ["img-1.png", "", "1"], f"img-1.png 丢失更新: {rows[1]!r}"
+    assert rows[3] == ["img-3.png", "", "0"], f"img-3.png 丢失更新: {rows[3]!r}"

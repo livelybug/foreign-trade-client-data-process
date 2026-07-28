@@ -38,7 +38,7 @@ from pathlib import Path
 from filelock import FileLock, Timeout
 
 UNCERTAIN_PATH_DEFAULT = Path("uncertain.md")
-LOCK_TIMEOUT = 60  # seconds
+LOCK_TIMEOUT = 10  # seconds: append_uncertain 持锁时间极短,排队快
 
 
 def read_header(field_table: Path) -> list[str]:
