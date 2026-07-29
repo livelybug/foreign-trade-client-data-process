@@ -1,0 +1,708 @@
+{
+  "客户类型": {
+    "核心经营模式": [
+      {
+        "name": "生产制造商 (Manufacturer)",
+        "evidence": {
+          "标识短语": [
+            "manufacturer",
+            "we are manufacturers of …"
+          ]
+        }
+      },
+      {
+        "name": "贸易/渠道商",
+        "evidence": {
+          "贸易公司 (Trading Company)": [
+            "trading company",
+            "we are importers and marketing …"
+          ],
+          "分销/批发 (Distributor/Wholesaler)": [
+            "distributor/wholesaler"
+          ],
+          "采购代办 (Buying Office)": [
+            "buying office"
+          ]
+        }
+      }
+    ],
+    "特殊主体身份": [
+      {
+        "name": "新创企业 (New Entrepreneur)",
+        "evidence": {
+          "标识短语": [
+            "new entrepreneur",
+            "fresh entrepreneur",
+            "newly established company",
+            "new in this line",
+            "we are new in this field"
+          ]
+        }
+      },
+      {
+        "name": "政府/经济开发部门",
+        "evidence": {
+          "实例": [
+            "Azerbaijan Republic Nakhichevan Economic Development"
+          ]
+        }
+      },
+      {
+        "name": "非营利基金会",
+        "evidence": {
+          "实例": [
+            "foundation of children, adolescents with incapacity"
+          ]
+        }
+      },
+      {
+        "name": "专业咨询服务",
+        "evidence": {
+          "形态": [
+            "consulting company",
+            "technical textiles consultants"
+          ]
+        }
+      }
+    ],
+    "跨行业转型者 (Diversifiers)": [
+      {
+        "name": "邻近快消品制造商",
+        "evidence": {
+          "涉及品类": [
+            "paper cup",
+            "paper tube",
+            "cosmetics",
+            "wet wipes"
+          ]
+        }
+      },
+      {
+        "name": "工业/建材分销",
+        "evidence": {
+          "涉及品类": [
+            "building materials",
+            "glass",
+            "packaging"
+          ]
+        }
+      },
+      {
+        "name": "集团多元化",
+        "evidence": {
+          "起源行业": [
+            "brewery",
+            "distillery",
+            "sugar",
+            "steel",
+            "mosquito killer 等"
+          ],
+          "转型目标": [
+            "diapers",
+            "EVA"
+          ]
+        }
+      }
+    ]
+  },
+  "客户阶段": {
+    "信息收集期": [
+      {
+        "name": "初次接触 (Initial Inquiry)",
+        "evidence": {
+          "标识": [
+            "initial inquiry",
+            "first-time inquiry",
+            "I am interested in your … (占绝大多数)"
+          ]
+        }
+      },
+      {
+        "name": "索取报价/资料",
+        "evidence": {
+          "报价请求": [
+            "inquiry for quotation",
+            "request for quotation",
+            "please send me your best price"
+          ]
+        }
+      },
+      {
+        "name": "预购评估 (Pre-purchase Evaluation)",
+        "evidence": {
+          "索取内容": [
+            "catalogue",
+            "video",
+            "FOB price",
+            "MOQ",
+            "payment terms",
+            "delivery time",
+            "inspection certificate",
+            "specification"
+          ]
+        }
+      }
+    ],
+    "项目筹备期": [
+      {
+        "name": "建厂规划 (Planning)",
+        "evidence": {
+          "标识": [
+            "we are planning to set up a factory / plant in [country]"
+          ]
+        }
+      },
+      {
+        "name": "可行性研究 (Feasibility Study)",
+        "evidence": {
+          "标识": [
+            "project design",
+            "want to build a factory for producing …"
+          ]
+        }
+      },
+      {
+        "name": "试样/试订 (Trial Order)",
+        "evidence": {
+          "标识": [
+            "trial order of 2 production lines",
+            "1 Set/Sets"
+          ]
+        }
+      }
+    ],
+    "实地考察期": [
+      {
+        "name": "工厂参观准备",
+        "evidence": {
+          "标识": [
+            "we will be in China next week and would like to visit your reference factories"
+          ]
+        }
+      },
+      {
+        "name": "展会拜访",
+        "evidence": {
+          "实例": [
+            "Canton Fair visit planned"
+          ]
+        }
+      }
+    ],
+    "交易决策期": [
+      {
+        "name": "复购/再跟进 (Repeat Inquiry)",
+        "evidence": {
+          "特征": [
+            "第二/第三轮咨询,已是 N members 的客户,邮件回复链显示曾联系过"
+          ]
+        }
+      },
+      {
+        "name": "明确下单 (Ready-to-order)",
+        "evidence": {
+          "标识": [
+            "I want to purchase",
+            "I Want to purchase 1 of your product",
+            "I want to buy"
+          ]
+        }
+      },
+      {
+        "name": "商务谈判 (Negotiation)",
+        "evidence": {
+          "议价内容": [
+            "CFR/CIF/FOB price",
+            "L/C terms",
+            "shipping cost"
+          ]
+        }
+      }
+    ]
+  },
+  "客户来源": {
+    "阿里巴巴站内 (主导渠道)": [
+      {
+        "name": "收件箱触达",
+        "evidence": {
+          "标识": [
+            "My Alibaba inbox",
+            "I'm interested in your …"
+          ]
+        }
+      },
+      {
+        "name": "询盘分发机制",
+        "evidence": {
+          "单家定向": [
+            "买家 \"only sent to your company\""
+          ],
+          "多家群发": [
+            "\"sent to N suppliers\""
+          ]
+        }
+      },
+      {
+        "name": "商品/页面触达",
+        "evidence": {
+          "Product Catalog trigger": [
+            "\"saw your product / your company in this site\""
+          ],
+          "Gold Supplier product detail page": [],
+          "company homepage": []
+        }
+      },
+      {
+        "name": "搜索行为",
+        "evidence": {
+          "标识": [
+            "\"买家最近搜索: …\" 记录在 profile 中"
+          ]
+        }
+      }
+    ],
+    "第三方 B2B 平台": [
+      {
+        "name": "EC21 Inbox",
+        "evidence": {
+          "罕见,例": [
+            "Atrium ITC (1-2 例)"
+          ]
+        }
+      }
+    ],
+    "自有/外部渠道": [
+      {
+        "name": "公司/品牌网站转介",
+        "evidence": {
+          "实例": [
+            "www.invista.ua",
+            "www.raclac.pt",
+            "www.thaihospitalproducts.com"
+          ]
+        }
+      },
+      {
+        "name": "搜索引擎",
+        "evidence": {
+          "渠道": [
+            "Google",
+            "Yahoo"
+          ]
+        }
+      }
+    ],
+    "线下渠道": [
+      {
+        "name": "展会/展览",
+        "evidence": {
+          "Canton Fair": [
+            "\"I will be on canton fair on april\""
+          ],
+          "China Plas 2013": [
+            "\"WILL YOU BE PRESENT IN CHINA PLAS 2013 EXHIBITION ??\""
+          ],
+          "Brazil exhibition search": []
+        }
+      },
+      {
+        "name": "转介绍",
+        "evidence": {
+          "形态": [
+            "referral / friend / old-client recommendation (罕见)"
+          ],
+          "实例": [
+            "Bashundhara 经 Bonolata 中介",
+            "\"heard from friend\""
+          ]
+        }
+      }
+    ],
+    "直接联系": [
+      {
+        "name": "个人邮箱直发",
+        "evidence": {
+          "渠道": [
+            "部分买家绕过阿里直接发送至个人 gmail / yahoo"
+          ]
+        }
+      }
+    ]
+  },
+  "价格敏感度": {
+    "高度敏感": [
+      {
+        "name": "极低价诉求",
+        "evidence": {
+          "关键词": [
+            "best price",
+            "lowest price",
+            "best quote",
+            "cheapest",
+            "your last price (出现频率极高)"
+          ]
+        }
+      },
+      {
+        "name": "强比价/砍价",
+        "evidence": {
+          "关键词": [
+            "competitive price",
+            "competitive rates",
+            "compare prices and features with the other suppliers"
+          ]
+        }
+      },
+      {
+        "name": "底价/低成本设备",
+        "evidence": {
+          "关键词": [
+            "rock bottom price",
+            "low cost machine",
+            "high speed and economy"
+          ]
+        }
+      },
+      {
+        "name": "明示降价压力",
+        "evidence": {
+          "表述": [
+            "we need to be very cheap in order to get the order",
+            "must be best quality but cheap"
+          ]
+        }
+      },
+      {
+        "name": "预算封顶式",
+        "evidence": {
+          "实例": [
+            "\"the one that cost about 70 to 80000 usd\"",
+            "\"My budget for the development of this line is approx. $280,000\""
+          ]
+        }
+      },
+      {
+        "name": "降本设备偏好",
+        "evidence": {
+          "形态": [
+            "倾向 used / second-hand machine"
+          ],
+          "表述": [
+            "we wouldn't mind even buying the Used machine"
+          ]
+        }
+      }
+    ],
+    "中度敏感": [
+      {
+        "name": "试水/小规模预算",
+        "evidence": {
+          "标识": [
+            "we are totally new in this project",
+            "start from small lines",
+            "small scale ind's project"
+          ]
+        }
+      },
+      {
+        "name": "性价比导向",
+        "evidence": {
+          "表述": [
+            "high quality and cheaper locally produce product"
+          ]
+        }
+      },
+      {
+        "name": "RFQ 报价模式",
+        "evidence": {
+          "标识": [
+            "kindly quote us your best / cheapest / lowest / rock-bottom"
+          ]
+        }
+      }
+    ],
+    "低敏感/价格不敏感": [
+      {
+        "name": "质量优先于价格",
+        "evidence": {
+          "表述": [
+            "quality must be best, no matter low or high capacity"
+          ]
+        }
+      },
+      {
+        "name": "国际品牌对标",
+        "evidence": {
+          "实例": [
+            "\"international brand like Whisper / Huggies / Pampers\" (罕见,如 Rauf Rehimov)"
+          ]
+        }
+      }
+    ],
+    "支付能力信号 (非敏感性指标)": [
+      {
+        "name": "L/C at sight",
+        "evidence": {}
+      },
+      {
+        "name": "100% TT in advance",
+        "evidence": {}
+      }
+    ]
+  },
+  "采购意向": {
+    "明确购买": [
+      {
+        "name": "直接下单意愿",
+        "evidence": {
+          "标识": [
+            "I want to buy",
+            "I Want to purchase 1 of your product"
+          ]
+        }
+      },
+      {
+        "name": "工厂建设",
+        "evidence": {
+          "标识": [
+            "want to set up a factory"
+          ]
+        }
+      },
+      {
+        "name": "生产线投资",
+        "evidence": {
+          "标识": [
+            "want to invest on … production line"
+          ]
+        }
+      },
+      {
+        "name": "试订单",
+        "evidence": {
+          "数量": [
+            "1 Set/Sets",
+            "1 Unidad",
+            "1 pieces",
+            "trial order of 2 production lines"
+          ]
+        }
+      }
+    ],
+    "业务拓展": [
+      {
+        "name": "新项目/首次进入",
+        "evidence": {
+          "标识": [
+            "we are newly established",
+            "I'm a new entrepreneur",
+            "we are new in this line",
+            "first time we've been doing this production"
+          ]
+        }
+      },
+      {
+        "name": "多元化转型",
+        "evidence": {
+          "表述": [
+            "we want to diversify our line of production"
+          ],
+          "起源行业": [
+            "paper",
+            "glass",
+            "mosquito killer",
+            "beverages",
+            "steel",
+            "sugar",
+            "wind power",
+            "brewery"
+          ]
+        }
+      },
+      {
+        "name": "转售/经销",
+        "evidence": {
+          "标识": [
+            "we'd like to resell your machines here in Kazakhstan and abroad",
+            "we are distributors of glass"
+          ]
+        }
+      },
+      {
+        "name": "进口业务",
+        "evidence": {
+          "标识": [
+            "I want to import Product line of …",
+            "we want to import automatic baby diapers making machine"
+          ]
+        }
+      },
+      {
+        "name": "设备替换/升级",
+        "evidence": {
+          "标识": [
+            "want to alter our machine",
+            "looking for used diaper machinery",
+            "want a machine to upgrade"
+          ]
+        }
+      }
+    ],
+    "代理/中介": [
+      {
+        "name": "代理采购",
+        "evidence": {
+          "标识": [
+            "I do purchasing for my clients"
+          ]
+        }
+      },
+      {
+        "name": "代下游买家",
+        "evidence": {
+          "实例": [
+            "\"for our Buyer in Lybia\"",
+            "\"for Bashundhara Paper Mills Ltd.\""
+          ]
+        }
+      }
+    ],
+    "探索/参考": [
+      {
+        "name": "仅作参考/索取样本",
+        "evidence": {
+          "标识": [
+            "please send me a few options",
+            "kindly send specification … for our reference"
+          ]
+        }
+      },
+      {
+        "name": "实地考察",
+        "evidence": {
+          "标识": [
+            "to visit your reference factories",
+            "we will be on canton fair"
+          ]
+        }
+      },
+      {
+        "name": "未验证/探索性",
+        "evidence": {
+          "标识": [
+            "\"I am an individual investment outfit\" (少数)"
+          ]
+        }
+      }
+    ]
+  },
+  "阿里买家身份": {
+    "会员等级": [
+      {
+        "name": "免费会员 (压倒性多数)",
+        "evidence": {
+          "标识": [
+            "Alibaba Free Member"
+          ],
+          "资历标记": [
+            "\"免费会员第 1 年\"",
+            "\"免费会员第 2 年\"",
+            "\"第 3-10 年\""
+          ]
+        }
+      },
+      {
+        "name": "长期未付费身份",
+        "evidence": {
+          "特征": [
+            "1-10 年仍是免费身份,经验存在但未升级"
+          ]
+        }
+      },
+      {
+        "name": "付费/认证标识缺失",
+        "evidence": {
+          "无\"金品诚企\" / Gold Supplier China Premium 标签": [],
+          "无 Trade Assurance / \"信保订单\" 挂单": []
+        }
+      }
+    ],
+    "资料完整度": [
+      {
+        "name": "基础/未完善档案",
+        "evidence": {
+          "缺失项": [
+            "无 公司介绍",
+            "无 Logo"
+          ],
+          "邮箱状态": [
+            "部分显示\"邮箱未验证\""
+          ]
+        }
+      },
+      {
+        "name": "认证邮箱",
+        "evidence": {
+          "状态": [
+            "部分已认证"
+          ]
+        }
+      }
+    ],
+    "行为画像 (Buyer Behavior)": [
+      {
+        "name": "群发广播行为",
+        "evidence": {
+          "数据范围": [
+            "询盘发出 50-1500,垃圾询盘 0-56"
+          ],
+          "含义": [
+            "多数买家向多家供应商批量撒网"
+          ]
+        }
+      },
+      {
+        "name": "低信任/疑似垃圾模式",
+        "evidence": {
+          "特征": [
+            "低 询盘发出 + 高 垃圾询盘"
+          ],
+          "实例": [
+            "\"询盘发出 39 条 / 垃圾询盘 34 条\""
+          ]
+        }
+      },
+      {
+        "name": "已被多方询价",
+        "evidence": {
+          "标识": [
+            "\"已是 X 位会员的客户\" — 正在被多家中国供应商接单"
+          ]
+        }
+      },
+      {
+        "name": "金品供应商关注名单 (罕见)",
+        "evidence": {
+          "标识": [
+            "\"已是 N 位金贵公司的客户\""
+          ],
+          "实例": [
+            "Dynamic Corporation (含义: 已被付费供应商盯上,本身仍是免费买家)"
+          ]
+        }
+      }
+    ],
+    "身份标签 (经营模式)": [
+      {
+        "name": "分类",
+        "evidence": [
+          "Manufacturer",
+          "Trading Company",
+          "Buying Office",
+          "Distributor-Wholesaler",
+          "Other"
+        ]
+      }
+    ]
+  }
+}
