@@ -178,7 +178,10 @@ echo "exit=$?"   # 期望 exit=1
 
 ### 4.5 自动测试
 
-`code/test/` 下有 7 个端到端测试文件，每个对应一个被测脚本，覆盖成功路径、错误路径，写脚本的还含并发路径。文件命名规则 `test_<脚本同名>.py`。
+`code/test/` 下有 7 个端到端 pytest 测试文件 + 1 个独立验证脚本：
+
+- **pytest 测试**（7 个）：`test_<脚本同名>.py`，每个对应一个被测脚本，覆盖成功路径、错误路径，写脚本的还含并发路径。
+- **独立验证脚本**（1 个）：`verify_uncertain_json.py`，不在 pytest 套件内（因为要看真实子进程并发的文件系统行为），用 `uv run python` 直接跑。详见 [§4.6](#46-独立验证脚本)。
 
 测试机制：
 
@@ -217,6 +220,36 @@ uv run --with pytest pytest code/test/test_04_merge.py -v
 ```bash
 uv run --with pytest pytest code/test/ -v
 ```
+
+### 4.6 独立验证脚本
+
+`code/test/verify_uncertain_json.py` 不在 pytest 套件内——它需要起真实子进程并发跑 `03-tmp-csv.py` 看文件系统的 read-modify-write 行为，pytest 的 `tmp_path` 隔离与单进程 fixture 不适合这个场景。脚本用 `tempfile.mkdtemp` 在 `/tmp` 起隔离目录，对仓库无副作用。
+
+跑法：
+
+```bash
+uv run python code/test/verify_uncertain_json.py
+```
+
+输出形如：
+
+```
+[OK] 顶层是 dict,key=stem
+[OK] 同 basename 二次 append 是 extend
+[OK] 不同 basename 各占一 key
+[OK] 写盘格式: 中文保留 / 2 空格缩进 / 末尾换行
+[OK] 真并发 2 子进程: 文件仍是合法 dict,无丢失更新
+
+=== 独立验证全部通过 ===
+```
+
+任一契约失败立即 `exit 1` 并把 `[FAIL] ...` 打印到 stderr。
+
+适用场景：
+
+- 修改 `03-tmp-csv.py` 的 `load_uncertain` / `append_uncertain` 后做一次端到端 sanity check
+- 排查"为什么 `uncertain.json` 没出现 / 内容不对 / 并发写入丢数据"类问题
+- 流水线整体跑完后做一次最终验证（不依赖 pytest fixture）
 
 ---
 

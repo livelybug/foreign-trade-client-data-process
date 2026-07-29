@@ -23,7 +23,8 @@
 
     若 --uncertain 提供非空 JSON 数组,则契约通过后再以 filelock
     排他锁将不确定清单按文件分组追加写入 --uncertain-path(默认
-    仓库根 uncertain.md),供后续人工 review。
+    仓库根 uncertain.json,顶层结构 {basename: [items...]}),供后
+    续人工 review。
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from pathlib import Path
 
 from filelock import FileLock, Timeout
 
-UNCERTAIN_PATH_DEFAULT = Path("uncertain.md")
+UNCERTAIN_PATH_DEFAULT = Path("uncertain.json")
 LOCK_TIMEOUT = 10  # seconds: append_uncertain 持锁时间极短,排队快
 
 
@@ -176,49 +177,61 @@ def validate_uncertain(raw: str) -> list[dict]:
     return parsed
 
 
-def format_uncertain_block(basename: str, items: list[dict]) -> str:
-    """把一组不确定条目渲染成 markdown 段落。
+def load_uncertain(path: Path) -> dict:
+    """读取已有的 uncertain.json;文件不存在返回空 dict。
 
-    段落格式:
-        ## <basename>
-        <空行>
-        - **<field>**：<question>；候选：`o1` / `o2`；值：`v`
-        - ...
-
-    段末保留 1 个 '\\n',段间空行由 append_uncertain 控制。
+    顶层必须是 dict,否则 exit 1;JSON 解析失败也 exit 1。
     """
-    lines: list[str] = [f"## {basename}", ""]
-    for item in items:
-        suffixes: list[str] = []
-        opts = item.get("options")
-        if opts:
-            suffixes.append("候选：" + " / ".join(f"`{o}`" for o in opts))
-        val = item.get("value")
-        if val:
-            suffixes.append(f"值：`{val}`")
-        line = f"- **{item['field']}**：{item['question']}"
-        if suffixes:
-            line += "；" + " / ".join(suffixes)
-        lines.append(line)
-    return "\n".join(lines) + "\n"
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError as exc:
+        print(f"[ERROR] {path} 不是合法 JSON: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except OSError as exc:
+        print(f"[ERROR] failed to read {path}: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(data, dict):
+        print(
+            f"[ERROR] {path} 顶层必须是 dict, 实际类型: {type(data).__name__}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return data
 
 
-def append_uncertain(path: Path, block: str) -> None:
-    """在 filelock 排他锁下将 markdown 段追加到 uncertain 文件。
+def append_uncertain(path: Path, basename: str, items: list[dict]) -> None:
+    """在 filelock 排他锁下将 items 追加到 uncertain.json 中 basename 键下。
 
-    - 文件不存在或为空:直接写 block。
-    - 文件非空:先补 '\\n\\n' 作为段间隔,再写 block。
+    顶层结构: {<basename>: [<item>, <item>, ...]}。
+    - 文件不存在:写 {basename: items}。
+    - 文件存在:读出 dict,basename 键已存在则 extend,否则新增。
+    - basename 键已存在但值不是 list → exit 1(防止数据被覆盖/破坏)。
+    - 写回时使用 indent=2, ensure_ascii=False, 末尾补一个 '\\n'。
     lock 文件: <path>.lock(与 02-write-OCR / 03-write-feature 风格一致)。
     """
     lock_path = path.with_suffix(path.suffix + ".lock")
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with FileLock(str(lock_path), timeout=LOCK_TIMEOUT):
-            need_sep = path.exists() and path.stat().st_size > 0
-            with path.open("a", encoding="utf-8") as f:
-                if need_sep:
-                    f.write("\n\n")
-                f.write(block)
+            data = load_uncertain(path)
+            if basename in data:
+                existing = data[basename]
+                if not isinstance(existing, list):
+                    print(
+                        f"[ERROR] {path}[{basename!r}] 必须是 list, "
+                        f"实际类型: {type(existing).__name__}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                existing.extend(items)
+            else:
+                data[basename] = items
+            with path.open("w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.write("\n")
     except Timeout:
         print(f"[ERROR] could not acquire lock: {lock_path}", file=sys.stderr)
         sys.exit(1)
@@ -244,7 +257,7 @@ def main() -> None:
         required=False,
         type=Path,
         default=UNCERTAIN_PATH_DEFAULT,
-        help="不确定清单的追加目标文件路径(默认: 仓库根 uncertain.md)",
+        help="不确定清单的追加目标文件路径(默认: 仓库根 uncertain.json,顶层结构 {basename: [items...]})",
     )
     args = parser.parse_args()
 
@@ -262,8 +275,7 @@ def main() -> None:
     items = validate_uncertain(args.uncertain)
     if items:
         basename = args.txt.stem
-        block = format_uncertain_block(basename, items)
-        append_uncertain(args.uncertain_path, block)
+        append_uncertain(args.uncertain_path, basename, items)
         print(f"[OK] appended {len(items)} uncertain item(s) to {args.uncertain_path}")
 
     print(f"[OK] wrote tmp csv {args.output} ({len(values)} fields)")

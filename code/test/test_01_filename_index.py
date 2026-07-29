@@ -64,8 +64,22 @@ def _run(*args: str) -> subprocess.CompletedProcess:
     )
 
 
+def _expected_png_count() -> int:
+    """动态数 raw_data/ 下 .png 文件数,作为 row count 的预期基准。
+
+    raw_data/ 会被陆续添加新的名片图片,不能把 4 写死。
+    """
+    return sum(1 for p in RAW_DIR.glob("*.png") if p.is_file())
+
+
 @pytest.fixture(scope="module")
-def ran_success() -> subprocess.CompletedProcess:
+def expected_rows() -> int:
+    """module 级:本次测试启动时 raw_data/ 里的 .png 数,产物文件行数应等于此值。"""
+    return _expected_png_count()
+
+
+@pytest.fixture(scope="module")
+def ran_success(expected_rows: int) -> subprocess.CompletedProcess:
     """module 级:跑一次成功路径,产物供 §4.3 测试复用。"""
     if OUTPUT.exists():
         OUTPUT.unlink()
@@ -76,15 +90,15 @@ def ran_success() -> subprocess.CompletedProcess:
 
 # ---- §4.3 成功路径 ----
 
-def test_4_3_stdout_ok_message(ran_success: subprocess.CompletedProcess) -> None:
-    """stdout 应为 `[OK] wrote 4 rows to <output>`。"""
-    assert ran_success.stdout.strip() == f"[OK] wrote 4 rows to {OUTPUT}"
+def test_4_3_stdout_ok_message(ran_success: subprocess.CompletedProcess, expected_rows: int) -> None:
+    """stdout 应为 `[OK] wrote N rows to <output>`,N 等于 raw_data/ 下 .png 文件数。"""
+    assert ran_success.stdout.strip() == f"[OK] wrote {expected_rows} rows to {OUTPUT}"
 
 
-def test_4_3_row_count(ran_success: subprocess.CompletedProcess) -> None:
-    """ROW_COUNT_OK:1 表头 + 4 数据 = 5 行。"""
+def test_4_3_row_count(ran_success: subprocess.CompletedProcess, expected_rows: int) -> None:
+    """ROW_COUNT_OK:1 表头 + N 数据 = N+1 行。"""
     n = sum(1 for _ in OUTPUT.open(encoding="utf-8"))
-    assert n == 5
+    assert n == expected_rows + 1, f"expected {expected_rows + 1} lines, got {n}"
 
 
 def test_4_3_header(ran_success: subprocess.CompletedProcess) -> None:
@@ -103,14 +117,14 @@ def test_4_3_empty_ocr_and_feature_columns(ran_success: subprocess.CompletedProc
         assert row[2] == "", f"Feature Extract column not empty: {row}"
 
 
-def test_4_3_ascii_ascending_order(ran_success: subprocess.CompletedProcess) -> None:
-    """ORDER_OK:首行是 '2011-08-12 1.png',整体按 ASCII 升序,共 4 条。"""
+def test_4_3_ascii_ascending_order(ran_success: subprocess.CompletedProcess, expected_rows: int) -> None:
+    """ORDER_OK:首行是 '2011-08-12 1.png',整体按 ASCII 升序,共 N 条。"""
     with OUTPUT.open(encoding="utf-8", newline="") as f:
         rows = list(csv.reader(f))
     names = [r[0] for r in rows[1:]]
     assert names[0] == "2011-08-12 1.png"
     assert names == sorted(names)
-    assert len(names) == 4
+    assert len(names) == expected_rows
 
 
 # ---- §4.4 错误路径 ----

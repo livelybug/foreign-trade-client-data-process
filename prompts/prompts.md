@@ -208,7 +208,7 @@ uv run python code/02-OCR-check.py \
 对 checklist 中 `OCR=1` 且 `Feature Extract` 仍为空的每一行：
 1. 主 Agent 把目标清单按 `nlp_batch_size` 个一组装成"子批"（每个子批 = 一个子 Agent 一次处理的文件集，最多 `nlp_batch_size` 个 TXT）；每**调度轮**内并发派发 `max_concurrency` 个 NLP 子 Agent（Claude 子实例），每轮同时在飞最多 `max_concurrency × nlp_batch_size` 个 TXT（默认 60）；每个子 Agent 内部对其子批内 TXT **严格串行**处理（一个 txt 一次 `Read` + 一次 `03-tmp-csv.py` 调用，写完 csv 才进下一个）。
 2. 子 Agent 基于注入的字段表头对每个 txt 抽取关键字段。
-3. 子 Agent 通过调 `code/03-tmp-csv.py` 把抽取结果写入 `processed_data/csvs/<basename>.csv`（脚本内已含契约验证 + 自动追加 `uncertain.md`）。
+3. 子 Agent 通过调 `code/03-tmp-csv.py` 把抽取结果写入 `processed_data/csvs/<basename>.csv`（脚本内已含契约验证 + 自动追加 `uncertain.json`，顶层结构 `{basename: [items...]}`）。
 4. 成功后用 `code/03-write-feature.py` 把对应行 Feature Extract 列填为 `1`；失败填 `0`。
 5. 全部完成后用 `code/03-NLP-check.py` 验证。
 
@@ -234,8 +234,13 @@ uv run python code/02-OCR-check.py \
    ```
    - 这两个 JSON 内容**逐项目不同**：键名集合、各 key 下的 `细分选项` 数组、evidence 结构都可能变。
    - 后续每调度轮派发 `max_concurrency` 个子 Agent 时，每份子 Agent 提示词都必须把 `$opts` 字符串原文嵌入到 `OPTIONS_BLOCK` 代码块、`$hier` 字符串原文嵌入到 `HIERARCHY_BLOCK` 代码块；**子 Agent 不要再 Read 这两个 JSON**。
-4. 读 checklist 中所有 `OCR=1` 且 `Feature Extract` 为空的行，得到目标清单。
-5. 如果目标清单为空，跳到"全量验证"。
+4. **核对子 Agent 提示词模板**（LLM 直接阅读对比，不要走脚本）：
+   - 本步的子 Agent 提示词由 `code/utils/build_prompts.py` 根据模板生成；**本提示词文件下方"子 Agent 提示词模板"一节是该模板的权威源**，`build_prompts.py` 内部的 `TEMPLATE` 常量是实现副本，**容易与权威源漂移**。
+   - 启动第 3 步前必须用 Read 工具读 `code/utils/build_prompts.py`，把 `TEMPLATE = """..."""` 三引号字符串（按 Python 转义还原后）与下方"子 Agent 提示词模板"一节比对：
+     - **意思一致** → 继续， 不必要求逐字一致。
+     - **意思不一致** → 立即停下，**报告差异（哪一行/哪一句）**， 根据下方"子 Agent 提示词模板" 更新 `code/utils/build_prompts.py`->`TEMPLATE`. 
+5. 读 checklist 中所有 `OCR=1` 且 `Feature Extract` 为空的行，得到目标清单。
+6. 如果目标清单为空，跳到"全量验证"。
 
 # 子 Agent 提示词模板
 每个**子批**（最多 `nlp_batch_size` 个 TXT）启动一个子 Agent 实例。把下面整段发给它（`{files_block}` 替换为本子批 TXT 文件名列表——每行一个 `<basename>.txt`，不含路径；`{header}` 替换为前置检查读到的 `hdr` 原文；`{options}` 替换为 `$opts` 原文；`{hierarchy}` 替换为 `$hier` 原文）：
@@ -275,7 +280,7 @@ uv run python code/02-OCR-check.py \
 
 **输出**（每张 txt 一个独立产物）：
 - CSV：`processed_data/csvs/<basename>.csv`（仅替换扩展名，文件名其它部分原样保留）
-- 不确定清单（如有）：`uncertain.md`（仓库根，由 `code/03-tmp-csv.py` 在契约通过后追加写入）
+- 不确定清单（如有）：`uncertain.json`（仓库根，顶层结构 `{basename: [items...]}`，由 `code/03-tmp-csv.py` 在契约通过后追加写入）
 
 请严格按下列步骤执行（**严格串行**，一次只处理一个 txt；子批内某 txt 失败不要中断，继续处理剩余 txt）：
 
@@ -296,7 +301,7 @@ uv run python code/02-OCR-check.py \
 3. 整理出两个字符串：
    - **values**：所有字段值按 `FIELD_HEADER` 块顺序拼成 **单行 CSV 字符串**（用 csv 标准转义，可含逗号）。
    - **uncertain**（可选）：若有任何不确定点（无字段示例、无映射规则、多值歧义、固定选项字段命中 0 个/多个等），整理为 JSON 数组字符串。每项形如 `{"field":"<字段名>","question":"<你的疑问>","options":["候选1","候选2"],"value":"<你当前填的值>"}`；无不确定则传空串。
-4. 调 `code/03-tmp-csv.py` 写入（脚本会自动做契约检验：文件存在 / 共 2 行 / 表头匹配 / 数据列数匹配；契约通过后自动追加 `uncertain.md`；**必须走 `uv run`**）：
+4. 调 `code/03-tmp-csv.py` 写入（脚本会自动做契约检验：文件存在 / 共 2 行 / 表头匹配 / 数据列数匹配；契约通过后自动追加 `uncertain.json`（顶层结构 `{basename: [items...]}`）；**必须走 `uv run`**）：
    ```bash
    uv run python code/03-tmp-csv.py \
      --txt "processed_data/txts/<basename>.txt" \
@@ -313,8 +318,8 @@ uv run python code/02-OCR-check.py \
 完成后用一段按文件粒度的回执（每个 txt 一行，**仅文件名 + 状态**，不要其他文字）：
 - 成功 → `OK: <basename>.txt`
 - 失败 → `FAIL: <basename>.txt: <原因>`
-
 除上述外不要输出其他内容；不要修改任何文件名。
+
 ---
 
 # 主 Agent 调度流程
@@ -325,22 +330,15 @@ uv run python code/02-OCR-check.py \
 2. 按 `nlp_batch_size` 个一组装成子批（最后一个子批可能 < `nlp_batch_size`）；每组准备一份子 Agent 提示词（`{files_block}` = 该组全部 `<basename>.txt`，每行一个；`{header}` = `$hdr` 原文）。
 3. 本调度轮内取最多 `max_concurrency` 个子批，**同一 message 并发派发**对应的 `max_concurrency` 个 NLP 子 Agent（同一 message 内最多 `max_concurrency` 个 `Agent` 工具调用同时启动）。若子批数 > `max_concurrency`，超出部分进入下一调度轮。
 4. 等待本调度轮所有子 Agent 完成；汇总每个子 Agent 的回执（按文件粒度的 `OK` / `FAIL`）→ 得到本调度轮全部 txt 的"成功"与"失败"两份名单。
-5. **单条 Bash `for` 循环**一次性检查本调度轮全部 txt 对应的 csv 是否存在 + 共 2 行 + 表头完全等于 `$hdr` + 数据列数等于表头列数，输出 `[OK]/[BAD]`：
+5. **单条 Bash** 一次性调 `code/03-main-task.py` 验证本调度轮全部 txt 对应的 csv（脚本内已含契约检查：存在 / 共 2 行 / 表头等于 `raw_data/tg_features.csv` 第 1 行 / 数据列数等于表头列数），输出 `[OK]/[BAD]`：
    ```bash
-   hdr=$(head -n 1 raw_data/tg_features.csv)                                 # ① 取动态表头
-   for b in "<b1>" "<b2>" ... "<bN>"; do                                    # ② 遍历 N 个 basename(无扩展名)
-     c="processed_data/csvs/${b}.csv"                                       # ③ 拼出对应 csv 路径
-     if [ "$(wc -l < "$c" 2>/dev/null)" = "2" ] \                           # ④ 行数必须等于 2
-       && [ "$(head -n 1 "$c")" = "$hdr" ] \                                # ⑤ 表头必须等于字段表
-       && [ "$(awk -F, 'NR==2{print NF}' "$c" 2>/dev/null)" \               # ⑥ 数据列数必须等于表头列数
-            = "$(awk -F, '{print NF}' <<< "$hdr")" ]; then                  #
-       echo "[OK] $b";                                                       #    → 打印 OK
-     else
-       echo "[BAD] $b";                                                      #    → 打印 BAD
-     fi
-   done
+   uv run python code/03-main-task.py \
+     --basename "<b1>" --basename "<b2>" ... --basename "<bN>"
    ```
-   这一步是最终权威；子 Agent 自报 `OK` 但 csv 不满足契约 → 视为本调度轮失败。
+   - **输入**：每个 `--basename` 一个 basename（无扩展名，如 `"2011-08-12 1"`），本调度轮有几个 txt 就传几个。脚本自动从 `raw_data/tg_features.csv` 第 1 行取字段表头做契约比对，**调用方无需再读表头**。
+   - **输出**：每个 basename 一行 `[OK] b` 或 `[BAD] b: <原因>`（`<原因>` 可能是 `file not found` / `row count N != 2` / `header mismatch` / `data col count N != header col count N` / `read error: ...` 之一）；末行汇总 `OK=X BAD=Y`。
+   - **退出码**：全 OK → `0`；有 BAD → `1`（便于在单条 Bash 里用 `&&` 串接后续 `03-write-feature.py` 调用，contract 失败立即短路）。
+   - 这一步是最终权威；子 Agent 自报 `OK` 但 csv 不满足契约 → 视为本调度轮失败。
 6. **单条 Bash** 把本调度轮全部成功的 `03-write-feature.py --status 1` 用 `&&` 串起来一次跑完（必须走 `uv run`，写入目标 filename 是 `<basename>.png`——checklist 存的 png 全名，**不是 txt**）：
    ```bash
    uv run python code/03-write-feature.py --checklist processed_data/names-checklist.csv --filename "<png1>" --status 1 && \
@@ -370,7 +368,7 @@ uv run python code/03-NLP-check.py \
 - 列名与列顺序严格按注入的 `FIELD_HEADER`，**不要改**。
 - **每个子 Agent 一次最多处理 `nlp_batch_size`（默认 10）个 TXT，且必须严格串行**：一次只处理一个 txt（一个 `Read` + 一次 `03-tmp-csv.py` 调用），写完 csv 才进下一个；子批内某 txt 失败要跳过继续、**不要中断本子批**。
 - **主 Agent 派发层并发 = `max_concurrency`（默认 6）**：每调度轮（= 同一条 message）内最多 `max_concurrency` 个 `Agent` 工具调用同时启动；每个 `Agent` 调用处理一个子批（≤`nlp_batch_size` 个 TXT），所以每轮同时在飞最多 `max_concurrency × nlp_batch_size` 个 TXT（默认 60）。
-- 子 Agent 写 csv **必须经 `code/03-tmp-csv.py`**（脚本内已含契约验证 + filelock 保护的 `uncertain.md` 追加写），不要直接 Write csv；同一子 Agent 内连续调多次 `03-tmp-csv.py` 是安全的（每次独立 append 自己的段）。
+- 子 Agent 写 csv **必须经 `code/03-tmp-csv.py`**（脚本内已含契约验证 + filelock 保护的 `uncertain.json` read-modify-write），不要直接 Write csv；同一子 Agent 内连续调多次 `03-tmp-csv.py` 是安全的（每次独立 append 自己的段）。
 - 写 checklist **必须经 `code/03-write-feature.py`**（按单文件粒度写，传入的是 PNG 全名）。
 - 子 Agent 回执**仅按文件粒度**给出 `OK/FAIL`，不要输出抽取的字段值、不要输出其它总结性文字。
 - **批量调用，禁止串行**：主 Agent：把 N 个 `03-write-feature.py` 串成单条 Bash；验证 N 个 csv 用单条 Bash `for` 循环。**禁止 N 个文件 N 次 Bash 串行**。原则见文件顶部"工具调用总则"。
@@ -381,7 +379,7 @@ uv run python code/03-NLP-check.py \
 - 处理目标数
 - Feature Extract=1 成功数 / =0 失败数
 - `03-NLP-check.py` 的验证结果
-- 若 `uncertain.md` 有追加内容，告知条目数
+- 若 `uncertain.json` 有追加内容，告知条目数
 ````
 
 ---
@@ -395,7 +393,7 @@ uv run python code/03-NLP-check.py \
 仓库根目录就是当前工作目录。
 
 # 本步目标
-按 `names-checklist.csv` 的行序，把所有 `Feature Extract=1` 行对应的临时 CSV 合并为 `processed_data/final.csv`，**去重表头**（仅保留第 1 个临时 CSV 的表头）。
+按 `processed_data/names-checklist.csv` 的行序，把所有 `Feature Extract=1` 行对应的临时 CSV 合并为 `processed_data/final.csv`，**去重表头**（仅保留第 1 个临时 CSV 的表头）。
 
 # 前置检查
 1. `processed_data/names-checklist.csv` 存在，且第 3 步已完成（Feature Extract 列每行已填 `0` 或 `1`）。
@@ -424,7 +422,7 @@ uv run python code/04-merge.py \
 - 不要直接编辑 `final.csv`，**只能通过 `code/04-merge.py`**。
 - 不要修改任何文件名。
 - Feature Extract=0 的行不会进 final.csv。
-- **Python 必须走 `uv run`**：`uv run python code/04-merge.py ...`，**禁止直接用 `python`**。原则见文件顶部"工具调用总则"。
+- **Python 必须走 `uv run`**：`uv run python code/04-merge.py ...`，**禁止直接用 `python`**。
 
 # 完成后输出
 简明告知：

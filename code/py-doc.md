@@ -90,7 +90,7 @@
 
 ### 功能描述
 
-为单个 OCR 文本生成结构化临时 CSV。从字段表中读取表头行，结合 NLP 子 Agent 提取的字段值，输出 2 行（表头 + 数据）的临时 CSV 文件。并在写入后执行判定契约检验。契约通过后，若 `--uncertain` 提供了非空 JSON 数组，则以 filelock 排他锁将"不确定"清单按 `--txt` 文件名分组追加写入 `--uncertain-path`（默认 `uncertain.md`），供后续人工 review。
+为单个 OCR 文本生成结构化临时 CSV。从字段表中读取表头行，结合 NLP 子 Agent 提取的字段值，输出 2 行（表头 + 数据）的临时 CSV 文件。并在写入后执行判定契约检验。契约通过后，若 `--uncertain` 提供了非空 JSON 数组，则以 filelock 排他锁将"不确定"清单按 `--txt` 文件名分组追加写入 `--uncertain-path`（默认 `uncertain.json`），顶层结构为 `{<basename>: [<item>, ...]}`，供后续人工 review。
 
 ### 输入参数
 
@@ -101,14 +101,14 @@
 | `--values` | 逗号分隔的提取字段值 | `"ACME Corp,USA,分销商,,..."` |
 | `--output` | 输出的临时 CSV 文件路径 | `processed_data/csvs/2011-08-12 1.csv` |
 | `--uncertain` | JSON 数组字符串，每项描述一个"不确定"点；空串或 `[]` 表示无 | `'[{"field":"价格敏感度","question":"期望是高/中/低 还是 高敏感?","options":["高/中/低","高敏感"]}]'` |
-| `--uncertain-path` | 不确定清单的追加目标文件路径 | `uncertain.md`（默认） |
+| `--uncertain-path` | 不确定清单的追加目标文件路径 | `uncertain.json`（默认，结构 `{basename: [items...]}`） |
 
 ### 输出
 
 - **文件**：`--output` 指定的临时 CSV
 - **格式**：第 1 行为 `--field-table` 的表头行，第 2 行为 `--values` 的数据
 - **编码**：UTF-8（无 BOM），行尾 `\n`
-- **附加输出**（仅当 `--uncertain` 非空 JSON 数组时）：`--uncertain-path`（默认 `uncertain.md`）末尾追加一个 markdown 段落，每段以 `--txt` 的 stem（去 `.txt`）为一级标题，标题下用项目列表展示各不确定条目
+- **附加输出**（仅当 `--uncertain` 非空 JSON 数组时）：`--uncertain-path`（默认 `uncertain.json`）以"读-改-写"方式更新顶层 dict；新增的 items 追加到 `--txt` 的 stem（去 `.txt`）对应键的 list 末尾；不存在该键则新建。
 
 ### 判定契约检验（写入后自动执行）
 
@@ -123,26 +123,46 @@
 
 - **触发条件**：`--uncertain` 经 `validate_uncertain` 校验后得到非空 `list[dict]`。空串、`"[]"` 或校验失败均不进入追加流程。
 - **时机**：在 `verify_contract` 之后执行；契约失败（exit 1）时本段不执行，避免基于错误数据记录问题。
-- **并发安全**：使用 `filelock.FileLock` 排他锁，锁文件位于 `<uncertain-path>.lock`（例如 `uncertain.md.lock`），与 `02-write-OCR.py` / `03-write-feature.py` 风格一致；`timeout=60s`，超时 → exit 1。
-- **段落格式**：以 `--txt` 的 stem（去 `.txt`）作为一级标题（`## <stem>`），空行后是项目化列表，每项一条不确定点：
+- **并发安全**：使用 `filelock.FileLock` 排他锁，锁文件位于 `<uncertain-path>.lock`（例如 `uncertain.json.lock`），与 `02-write-OCR.py` / `03-write-feature.py` 风格一致；`timeout=10s`，超时 → exit 1。
+- **数据结构**：顶层是 `dict`，key 是 `--txt` 的 stem（去 `.txt`），value 是 `list[dict]`。每个 item 形如：
 
   - 必填字段：`field`（非空 str）、`question`（非空 str）
-  - 可选字段：`options`（`list[str]`）渲染为"候选：`o1` / `o2`"；`value`（str）渲染为"值：`v`"
-  - 候选项与值都用反引号包裹；多个候选用 ` / ` 分隔；后缀与 `question` 之间用中文分号 `；` 分隔
-  - 段末保留 1 个 `\n`；段间空行（`\n\n`）由 `append_uncertain` 自动补齐；首段不补前导换行（文件为空时直接写 block）
+  - 可选字段：`options`（`list[str]`）、`value`（str）
 
-  示例（`--txt` = `2011-08-12 1.txt`，`--uncertain` 含两条）：
+  写回时使用 `indent=2`、`ensure_ascii=False`，便于人工 review；末尾保留 1 个 `\n`。
 
-  ```markdown
-  ## 2011-08-12 1
+  示例（`--txt` = `2011-08-12 1.txt`，`--uncertain` 含两条，且与 `2011-08-12 2` 共享同一 `uncertain.json`）：
 
-  - **价格敏感度**：期望是高/中/低 还是 高敏感?；候选：`高/中/低` / `高敏感`
-  - **电话**：多个电话选哪个?；值：`+86-21-12345678; +86-13800138000`
+  ```json
+  {
+    "2011-08-12 1": [
+      {
+        "field": "价格敏感度",
+        "question": "期望是高/中/低 还是 高敏感?",
+        "options": ["高/中/低", "高敏感"]
+      },
+      {
+        "field": "电话",
+        "question": "多个电话选哪个?",
+        "value": "+1-555-0100; +1-555-0200"
+      }
+    ],
+    "2011-08-12 2": [
+      {
+        "field": "客户阶段",
+        "question": "阶段定义?",
+        "value": "初始"
+      }
+    ]
+  }
   ```
 
-- **追加规则**：
-  - 文件不存在或为空 → 直接写 block；
-  - 文件非空 → 先补 `\n\n` 作为段间隔，再写 block；
+- **更新规则**：
+  - 文件不存在 → 写入 `{basename: items}`；
+  - 文件存在但目标键不存在 → 新增该键，值取本次 items；
+  - 文件存在且目标键已是 `list` → 追加（`list.extend`）；
+  - 文件存在但目标键不是 `list` → 报错退出（防止覆盖/破坏既有数据）；
+  - 顶层非 `dict`（例如人为写入 JSON 数组）→ 报错退出；
   - 父目录不存在则自动创建（`parents=True, exist_ok=True`）。
 
 ### 错误处理

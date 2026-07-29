@@ -113,7 +113,7 @@
     4. 整理出两个字符串：
         - **values**：所有字段值按表头列顺序拼成**单行 CSV 字符串**（用 csv 标准转义，可含逗号）。
         - **uncertain**（可选）：若有不确定点（无字段示例、无映射规则、多值歧义等），整理为 JSON 数组字符串，每项形如 `{"field":"<字段名>","question":"<你的疑问>","options":["候选1","候选2"],"value":"<你当前填的值>"}`；无不确定则传空串。
-    5. 调 `code/03-tmp-csv.py`（**必须走 `uv run`**，脚本内已含契约检验 + 自动追加 `uncertain.md`）：
+    5. 调 `code/03-tmp-csv.py`（**必须走 `uv run`**，脚本内已含契约检验 + 自动追加 `uncertain.json`，顶层结构 `{basename: [items...]}`）：
         ```
         uv run python code/03-tmp-csv.py \
           --txt "processed_data/txts/<basename>.txt" \
@@ -141,7 +141,7 @@
 
 - **执行**：
     - 本步NLP相关部分由agent执行，其余调python执行，见以下。
-    - 子 Agent提取关键字段成功，调用python生成独立的临时 CSV 文件，并在同一脚本中完成判定契约检验；若有任何不确定都写入`uncertain.md`：`code/03-tmp-csv.py`（脚本已用 filelock 保护 `uncertain.md` 的追加写，子 Agent 串行调多次安全追加）。
+    - 子 Agent提取关键字段成功，调用python生成独立的临时 CSV 文件，并在同一脚本中完成判定契约检验；若有任何不确定都写入`uncertain.json`（顶层结构 `{basename: [items...]}`）：`code/03-tmp-csv.py`（脚本已用 filelock 保护 `uncertain.json` 的 read-modify-write，子 Agent 串行调多次安全追加）。
     - 主 Agent 写入 checklist使用对应的python文件：`code/03-write-feature.py`。写入时使用 `filelock` 库对 `names-checklist.csv` 加排他锁，避免并发写入冲突。
     - **所有文件处理结束后的验证** 使用对应的python文件：`code/03-NLP-check.py`
 

@@ -8,8 +8,8 @@
 覆盖:
   * 成功路径: 简单值;带逗号/引号的 CSV 格式值(验证 RFC 4180 解析)
   * 错误路径: --txt 缺失 / --field-table 缺失 / --values 列数不匹配 / 字段表无表头
-  * uncertain 成功路径: 写入 markdown 段(中文分号分隔)/ 段间空行 / no-op / 空数组
-  * uncertain 并发追加: 两个子进程真正并发写同一 uncertain.md,验证锁覆盖全程
+  * uncertain 成功路径: 写入 JSON dict({basename: [items...]})/ 同一 basename 二次追加 / 跨 basename 合并 / no-op / 空数组
+  * uncertain 并发追加: 两个子进程真正并发写同一 uncertain.json,验证锁覆盖 read-modify-write 全程
   * uncertain 错误路径: JSON 解析失败 / 非 list / 元素非 dict / 缺必填 / options 类型错
 """
 
@@ -136,10 +136,10 @@ def test_happy_path_values_with_comma_and_quote(setup: tuple[Path, Path, Path]) 
 
 # ---- uncertain 成功路径 ----
 
-def test_uncertain_appends_markdown_block(setup: tuple[Path, Path, Path], tmp_path: Path) -> None:
-    """--uncertain 非空 JSON 数组 -> 追加 markdown 段,中文分号分隔,stem 来自 --txt。"""
+def test_uncertain_appends_to_json_dict(setup: tuple[Path, Path, Path], tmp_path: Path) -> None:
+    """--uncertain 非空 JSON 数组 -> 写入顶层 dict 的 basename 键,值为 items 列表。"""
     txt, ft, out = setup
-    unc = tmp_path / "unc.md"
+    unc = tmp_path / "unc.json"
     cp = _run(
         "--txt", str(txt),
         "--field-table", str(ft),
@@ -151,25 +151,32 @@ def test_uncertain_appends_markdown_block(setup: tuple[Path, Path, Path], tmp_pa
     assert cp.returncode == 0, f"stderr={cp.stderr}"
     assert "appended 2 uncertain" in cp.stdout
 
-    content = unc.read_text(encoding="utf-8")
-    # stem 是 "in"(setup 里 txt 名是 in.txt -> 去 .txt)
-    assert "## in\n\n" in content
-    # 中文分号分隔;反引号包裹;多个候选用 " / " 分隔
-    assert "**价格敏感度**：期望是高/中/低 还是 高敏感?；候选：`高/中/低` / `高敏感`" in content
-    assert "**电话**：多个电话选哪个?；值：`+1-555-0100; +1-555-0200`" in content
-    # 不应出现双问号(早期 bug 修复)
-    assert "??候选" not in content
-    assert "??值" not in content
-    # 段末保留 1 个换行
-    assert content.endswith("\n")
+    # 顶层是 dict,key = stem = "in",value = [item, item]
+    data = json.loads(unc.read_text(encoding="utf-8"))
+    assert isinstance(data, dict)
+    assert list(data.keys()) == ["in"]
+    items = data["in"]
+    assert isinstance(items, list) and len(items) == 2
+
+    # 第 1 条:options,无 value
+    assert items[0]["field"] == "价格敏感度"
+    assert items[0]["question"] == "期望是高/中/低 还是 高敏感?"
+    assert items[0]["options"] == ["高/中/低", "高敏感"]
+    assert "value" not in items[0]
+
+    # 第 2 条:value,无 options
+    assert items[1]["field"] == "电话"
+    assert items[1]["question"] == "多个电话选哪个?"
+    assert items[1]["value"] == "+1-555-0100; +1-555-0200"
+    assert "options" not in items[1]
 
 
-def test_uncertain_second_call_separates_by_blank_line(
+def test_uncertain_second_call_extends_same_key(
     setup: tuple[Path, Path, Path], tmp_path: Path,
 ) -> None:
-    """两次 --uncertain 写入 -> 段间用空行分隔(连续两次 ## 之间有 \\n\\n)。"""
+    """两次 --uncertain 写入(同 basename) -> 同一键的 list 长度翻倍,不是覆盖。"""
     txt, ft, out = setup
-    unc = tmp_path / "unc.md"
+    unc = tmp_path / "unc.json"
     item = json.dumps(
         [{"field": "客户阶段", "question": "阶段定义?", "value": "初始"}],
         ensure_ascii=False,
@@ -185,11 +192,51 @@ def test_uncertain_second_call_separates_by_blank_line(
         )
         assert cp.returncode == 0, f"stderr={cp.stderr}"
 
-    content = unc.read_text(encoding="utf-8")
-    # 两段都有
-    assert content.count("## in\n") == 2
-    # 段间空行
-    assert "\n\n## in\n" in content
+    data = json.loads(unc.read_text(encoding="utf-8"))
+    # 同 basename 仍只有 1 个键,list 长度 = 2
+    assert list(data.keys()) == ["in"]
+    assert data["in"] == [
+        {"field": "客户阶段", "question": "阶段定义?", "value": "初始"},
+        {"field": "客户阶段", "question": "阶段定义?", "value": "初始"},
+    ]
+
+
+def test_uncertain_different_basenames_make_separate_keys(
+    setup: tuple[Path, Path, Path], tmp_path: Path,
+) -> None:
+    """两个不同 stem 的 txt 写入同一 uncertain.json -> 顶层 dict 有 2 个键。"""
+    _, ft, out = setup
+    unc = tmp_path / "unc.json"
+    item_x = json.dumps(
+        [{"field": "客户类型", "question": "X 类?", "value": "分销商"}],
+        ensure_ascii=False,
+    )
+    item_y = json.dumps(
+        [{"field": "客户类型", "question": "Y 类?", "value": "终端用户"}],
+        ensure_ascii=False,
+    )
+
+    # 自己造两个 stem 不同的 txt(setup 里只有 in.txt)
+    txt_x = tmp_path / "doc-x.txt"
+    txt_x.write_text("dummy", encoding="utf-8")
+    txt_y = tmp_path / "doc-y.txt"
+    txt_y.write_text("dummy", encoding="utf-8")
+
+    for t, item in [(txt_x, item_x), (txt_y, item_y)]:
+        cp = _run(
+            "--txt", str(t),
+            "--field-table", str(ft),
+            "--values", "a,b,c",
+            "--output", str(out),
+            "--uncertain", item,
+            "--uncertain-path", str(unc),
+        )
+        assert cp.returncode == 0, f"stderr={cp.stderr}"
+
+    data = json.loads(unc.read_text(encoding="utf-8"))
+    assert set(data.keys()) == {"doc-x", "doc-y"}
+    assert data["doc-x"][0]["value"] == "分销商"
+    assert data["doc-y"][0]["value"] == "终端用户"
 
 
 def test_uncertain_omitted_does_not_create_file(
@@ -197,7 +244,7 @@ def test_uncertain_omitted_does_not_create_file(
 ) -> None:
     """不传 --uncertain 时,即使显式指定 --uncertain-path,文件也不应被创建。"""
     txt, ft, out = setup
-    unc = tmp_path / "should_not_exist.md"
+    unc = tmp_path / "should_not_exist.json"
     cp = _run(
         "--txt", str(txt),
         "--field-table", str(ft),
@@ -214,7 +261,7 @@ def test_uncertain_empty_array_equivalent_to_omitted(
 ) -> None:
     """--uncertain='[]' 等价于不传,不会写入文件。"""
     txt, ft, out = setup
-    unc = tmp_path / "unc.md"
+    unc = tmp_path / "unc.json"
     cp = _run(
         "--txt", str(txt),
         "--field-table", str(ft),
@@ -227,10 +274,12 @@ def test_uncertain_empty_array_equivalent_to_omitted(
     assert not unc.exists()
 
 
-def test_uncertain_options_only(setup: tuple[Path, Path, Path], tmp_path: Path) -> None:
-    """只有 options,无 value -> 渲染为 '候选:...'。"""
+def test_uncertain_options_preserved_in_json(
+    setup: tuple[Path, Path, Path], tmp_path: Path,
+) -> None:
+    """只有 options,无 value -> JSON 中只保留 options,不引入 value 键。"""
     txt, ft, out = setup
-    unc = tmp_path / "unc.md"
+    unc = tmp_path / "unc.json"
     cp = _run(
         "--txt", str(txt),
         "--field-table", str(ft),
@@ -240,15 +289,17 @@ def test_uncertain_options_only(setup: tuple[Path, Path, Path], tmp_path: Path) 
         "--uncertain-path", str(unc),
     )
     assert cp.returncode == 0, f"stderr={cp.stderr}"
-    content = unc.read_text(encoding="utf-8")
-    assert "候选：`分销商` / `代理商`" in content
-    assert "值：" not in content
+    data = json.loads(unc.read_text(encoding="utf-8"))
+    assert data["in"][0]["options"] == ["分销商", "代理商"]
+    assert "value" not in data["in"][0]
 
 
-def test_uncertain_value_only(setup: tuple[Path, Path, Path], tmp_path: Path) -> None:
-    """只有 value,无 options -> 渲染为 '值:...'。"""
+def test_uncertain_value_preserved_in_json(
+    setup: tuple[Path, Path, Path], tmp_path: Path,
+) -> None:
+    """只有 value,无 options -> JSON 中只保留 value,不引入 options 键。"""
     txt, ft, out = setup
-    unc = tmp_path / "unc.md"
+    unc = tmp_path / "unc.json"
     cp = _run(
         "--txt", str(txt),
         "--field-table", str(ft),
@@ -258,23 +309,23 @@ def test_uncertain_value_only(setup: tuple[Path, Path, Path], tmp_path: Path) ->
         "--uncertain-path", str(unc),
     )
     assert cp.returncode == 0, f"stderr={cp.stderr}"
-    content = unc.read_text(encoding="utf-8")
-    assert "值：`example.com`" in content
-    assert "候选：" not in content
+    data = json.loads(unc.read_text(encoding="utf-8"))
+    assert data["in"][0]["value"] == "example.com"
+    assert "options" not in data["in"][0]
 
 
 def test_concurrent_uncertain_appends(
     setup: tuple[Path, Path, Path], tmp_path: Path,
 ) -> None:
-    """两个子进程真正并发追加到同一 uncertain.md: 验证锁覆盖 read-modify-write 全程。
+    """两个子进程真正并发追加到同一 uncertain.json: 验证锁覆盖 read-modify-write 全程。
 
-    append_uncertain 在 FileLock 内完成 exists/stat/open/write,串行化保证:
+    append_uncertain 在 FileLock 内完成 load/extend/write,串行化保证:
     (1) 两个进程都成功返回 0
-    (2) 两段 markdown 都在文件中(无丢失更新)
-    (3) 段间用空行分隔(无拼接污染)
+    (2) 两条 item 都在文件 dict 中(无丢失更新)
+    (3) 文件始终是合法 JSON dict(无拼接污染)
     """
     txt, ft, out = setup
-    unc = tmp_path / "unc.md"
+    unc = tmp_path / "unc.json"
 
     item_a = json.dumps(
         [{"field": "field-A", "question": "Q-A?"}], ensure_ascii=False,
@@ -306,14 +357,14 @@ def test_concurrent_uncertain_appends(
     assert p1.returncode == 0, f"p1 stderr={err1}"
     assert p2.returncode == 0, f"p2 stderr={err2}"
 
-    content = unc.read_text(encoding="utf-8")
-    # 两段都落地 (锁覆盖全程,无丢失更新)
-    assert "field-A" in content, f"field-A 丢失: {content!r}"
-    assert "field-B" in content, f"field-B 丢失: {content!r}"
-    # 两段都出现
-    assert content.count("## in\n") == 2
-    # 段间空行
-    assert "\n\n## in\n" in content
+    # 锁覆盖全程,文件必须仍是合法 JSON dict
+    data = json.loads(unc.read_text(encoding="utf-8"))
+    assert isinstance(data, dict)
+    assert set(data.keys()) == {"in"}
+    fields = [it["field"] for it in data["in"]]
+    # 两条都落地(顺序不固定,只要都在)
+    assert "field-A" in fields and "field-B" in fields
+    assert len(data["in"]) == 2
 
 
 # ---- 错误路径 ----
@@ -385,7 +436,7 @@ def test_uncertain_json_parse_error_exits_1(
         "--values", "a,b,c",
         "--output", str(out),
         "--uncertain", "not-json",
-        "--uncertain-path", str(tmp_path / "unc.md"),
+        "--uncertain-path", str(tmp_path / "unc.json"),
     )
     assert cp.returncode == 1
     assert "JSON" in cp.stderr
@@ -400,7 +451,7 @@ def test_uncertain_not_list_exits_1(setup: tuple[Path, Path, Path], tmp_path: Pa
         "--values", "a,b,c",
         "--output", str(out),
         "--uncertain", '{"field":"x","question":"y"}',  # JSON object, not array
-        "--uncertain-path", str(tmp_path / "unc.md"),
+        "--uncertain-path", str(tmp_path / "unc.json"),
     )
     assert cp.returncode == 1
     assert "数组" in cp.stderr
@@ -417,7 +468,7 @@ def test_uncertain_element_not_dict_exits_1(
         "--values", "a,b,c",
         "--output", str(out),
         "--uncertain", '["just a string"]',
-        "--uncertain-path", str(tmp_path / "unc.md"),
+        "--uncertain-path", str(tmp_path / "unc.json"),
     )
     assert cp.returncode == 1
     assert "对象" in cp.stderr
@@ -434,7 +485,7 @@ def test_uncertain_missing_required_field_exits_1(
         "--values", "a,b,c",
         "--output", str(out),
         "--uncertain", '[{"question":"x"}]',  # 缺 field
-        "--uncertain-path", str(tmp_path / "unc.md"),
+        "--uncertain-path", str(tmp_path / "unc.json"),
     )
     assert cp.returncode == 1
     assert "field" in cp.stderr
@@ -451,7 +502,7 @@ def test_uncertain_invalid_options_type_exits_1(
         "--values", "a,b,c",
         "--output", str(out),
         "--uncertain", '[{"field":"x","question":"y","options":"not-a-list"}]',
-        "--uncertain-path", str(tmp_path / "unc.md"),
+        "--uncertain-path", str(tmp_path / "unc.json"),
     )
     assert cp.returncode == 1
     assert "options" in cp.stderr
