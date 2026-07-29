@@ -401,7 +401,7 @@ uv run python code/03-NLP-check.py \
 3. 若 `processed_data/final.csv` 已存在，**不要手动删**，脚本会自己删。
 
 # 执行步骤
-直接调用（**必须走 `uv run`**）：
+直接调用：
 ```bash
 uv run python code/04-merge.py \
   --checklist processed_data/names-checklist.csv \
