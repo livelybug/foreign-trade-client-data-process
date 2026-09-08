@@ -47,7 +47,7 @@ TEMPLATE = """你是 NLP 子 Agent，负责把一批 OCR 文本各自抽取为�
 
 **输出**（每张 txt 一个独立产物）：
 - CSV：`processed_data/csvs/<basename>.csv`（仅替换扩展名，文件名其它部分原样保留）
-- 不确定清单（如有）：`uncertain.json`（仓库根，顶层结构 `{{basename: [items...]}}`，由 `code/03-tmp-csv.py` 在契约通过后追加写入）
+- 不确定清单（如有）：`uncertain.json`（仓库根，顶层结构 `{{basename: [items...]}}`，由本 skill 的 `scripts/03-tmp-csv.py`（主 Agent 派发时以解析好的绝对路径注入）在契约通过后追加写入）
 
 请严格按下列步骤执行（**严格串行**，一次只处理一个 txt；子批内某 txt 失败不要中断，继续处理剩余 txt）：
 
@@ -68,9 +68,9 @@ TEMPLATE = """你是 NLP 子 Agent，负责把一批 OCR 文本各自抽取为�
 3. 整理出两个字符串：
    - **values**：所有字段值按 `FIELD_HEADER` 块顺序拼成 **单行 CSV 字符串**（用 csv 标准转义，可含逗号）。
    - **uncertain**（可选）：若有任何不确定点（无字段示例、无映射规则、多值歧义、固定选项字段命中 0 个/多个等），整理为 JSON 数组字符串。每项形如 `{{"field":"<字段名>","question":"<你的疑问>","options":["候选1","候选2"],"value":"<你当前填的值>"}}`；无不确定则传空串。
-4. 调 `code/03-tmp-csv.py` 写入（脚本会自动做契约检验：文件存在 / 共 2 行 / 表头匹配 / 数据列数匹配；契约通过后自动追加 `uncertain.json`（顶层结构 `{{basename: [items...]}}`）；**必须走 `uv run`**）：
+4. 调本 skill 的 `scripts/03-tmp-csv.py`（主 Agent 派发时以解析好的绝对路径注入）写入（脚本会自动做契约检验：文件存在 / 共 2 行 / 表头匹配 / 数据列数匹配；契约通过后自动追加 `uncertain.json`（顶层结构 `{{basename: [items...]}}`）；**必须用 `.venv/bin/python`**）：
    ```bash
-   uv run python code/03-tmp-csv.py \\
+   .venv/bin/python "<03-tmp-csv.py 绝对路径>" \\
      --txt "processed_data/txts/<basename>.txt" \\
      --field-table raw_data/tg_features.csv \\
      --values "<第 3 步的 values 字符串>" \\

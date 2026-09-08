@@ -1,12 +1,12 @@
 """test_01_filename_index.py — 步骤 01 端到端测试。
 
-对照 README §4 验证 `code/01-filename-index.py`:
+对照 README §4 验证 `scripts/01-filename-index.py`:
 
   * §4.3 成功路径产物: ROW_COUNT / HEADER / EMPTY_COLS / ORDER 四项
   * §4.4 错误路径冒烟: 目录不存在 / 目录无 .png 两项
 
-测试前会自动检查 `.venv` 和 `code/requirements.txt`,
-缺失时用 `uv` 创建 venv 并安装依赖,无需手工准备环境。
+测试前会自动检查 `.venv` 和 `scripts/requirements.txt`,
+缺失时用 `python3 -m venv` 创建并安装依赖,无需手工准备环境。
 """
 
 from __future__ import annotations
@@ -18,10 +18,12 @@ from pathlib import Path
 import pytest
 
 # ---- 路径常量 ----
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[5]
 VENV_DIR = PROJECT_ROOT / ".venv"
-REQUIREMENTS = PROJECT_ROOT / "code" / "requirements.txt"
-SCRIPT = PROJECT_ROOT / "code" / "01-filename-index.py"
+VENV_PY = VENV_DIR / "bin" / "python"
+SCRIPTS = PROJECT_ROOT / ".claude" / "skills" / "ocr-csv-pipeline" / "scripts"
+REQUIREMENTS = SCRIPTS / "requirements.txt"
+SCRIPT = SCRIPTS / "01-filename-index.py"
 RAW_DIR = PROJECT_ROOT / "raw_data"
 OUTPUT = PROJECT_ROOT / "processed_data" / "names-checklist.csv"
 
@@ -30,10 +32,10 @@ OUTPUT = PROJECT_ROOT / "processed_data" / "names-checklist.csv"
 
 def _venv_ready() -> bool:
     """.venv 存在且 `filelock` 可被 import。"""
-    if not VENV_DIR.exists():
+    if not VENV_PY.exists():
         return False
     return subprocess.run(
-        ["uv", "run", "python", "-c", "import filelock"],
+        [str(VENV_PY), "-c", "import filelock"],
         cwd=PROJECT_ROOT,
         capture_output=True,
     ).returncode == 0
@@ -41,13 +43,13 @@ def _venv_ready() -> bool:
 
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_env() -> None:
-    """保证 .venv 存在且依赖装好;缺失则用 `uv` 创建/安装。"""
+    """保证 .venv 存在且依赖装好;缺失则用 `python3 -m venv` 创建/安装。"""
     if _venv_ready():
         return
-    if not VENV_DIR.exists():
-        subprocess.run(["uv", "venv"], cwd=PROJECT_ROOT, check=True)
+    if not VENV_PY.exists():
+        subprocess.run(["python3", "-m", "venv", str(VENV_DIR)], cwd=PROJECT_ROOT, check=True)
     subprocess.run(
-        ["uv", "pip", "install", "-r", str(REQUIREMENTS)],
+        [str(VENV_PY), "-m", "pip", "install", "-r", str(REQUIREMENTS)],
         cwd=PROJECT_ROOT,
         check=True,
     )
@@ -57,7 +59,7 @@ def _ensure_env() -> None:
 
 def _run(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["uv", "run", "python", str(SCRIPT), *args],
+        [str(VENV_PY), str(SCRIPT), *args],
         cwd=PROJECT_ROOT,
         capture_output=True,
         text=True,

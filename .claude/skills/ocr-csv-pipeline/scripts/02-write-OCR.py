@@ -1,18 +1,15 @@
-"""03-write-feature.py — 将单个文件的特征提取结果写入 Feature Extract 列。
+"""02-write-OCR.py — 将单个文件的 OCR 结果写入 checklist 的 OCR 列。
 
 用法:
-    python code/03-write-feature.py \\
+    .venv/bin/python "$SKILL/scripts/02-write-OCR.py" \\
         --checklist processed_data/names-checklist.csv \\
         --filename "2011-08-12 1.png" \\
         --status 1
 
 行为:
-    与 02-write-OCR.py 对称,只是写入目标列从 OCR 换为 Feature Extract。
-    同样在 filelock 下做"读 → 改 → 写",供并行的 NLP 子 Agent 安全写入。
-    与 02-write-OCR.py 共用同一把 .lock 文件,以串行化两阶段的写。
-
-    修复: 之前版本只锁住读、写回在锁外,并发子 Agent 之间会丢失更新;
-    修复后 read-modify-write 全程在同一把锁内,串行化保证不丢更新。
+    在 filelock 保护下读 checklist,定位 --filename 所在行,把 OCR 列
+    写为 --status (0 / 1),再写回。这是流水线第 2 步,被并行的 OCR
+    子 Agent 调用,互斥锁避免并发写入冲突。
 """
 
 from __future__ import annotations
@@ -24,7 +21,7 @@ from pathlib import Path
 
 from filelock import FileLock, Timeout
 
-FEATURE_COL = "Feature Extract"
+OCR_COL = "OCR"
 VALID_STATUS = {"0", "1"}
 LOCK_TIMEOUT = 10  # seconds: 锁覆盖读-改-写全程后,串行排队依然很快
 
@@ -35,8 +32,8 @@ def validate_status(status: str) -> None:
         sys.exit(1)
 
 
-def update_row(checklist: Path, filename: str, status: str, col_idx: int) -> None:
-    """读-改-写全程在 FileLock 内,避免并发 NLP 子 Agent 之间的丢失更新。
+def update_row(checklist: Path, filename: str, status: str, ocr_col_idx: int) -> None:
+    """读-改-写全程在 FileLock 内,避免并发子 Agent 之间的丢失更新。
 
     之前版本只锁住读、写回在锁外:进程 A 读完释放锁后,进程 B 拿到锁
     读到的可能是 A 已截断/未写完的中间状态,造成数据丢失。修复后,读
@@ -66,9 +63,10 @@ def update_row(checklist: Path, filename: str, status: str, col_idx: int) -> Non
                 print(f"[ERROR] filename not found in checklist: {filename!r}", file=sys.stderr)
                 sys.exit(1)
 
-            while len(target_row) <= col_idx:
+            # pad row if needed
+            while len(target_row) <= ocr_col_idx:
                 target_row.append("")
-            target_row[col_idx] = status
+            target_row[ocr_col_idx] = status
             data[target_idx] = target_row
 
             with checklist.open("w", encoding="utf-8", newline="") as f:
@@ -87,7 +85,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checklist", required=True, type=Path, help="checklist CSV 路径")
     parser.add_argument("--filename", required=True, help="PNG 文件名(精确匹配)")
-    parser.add_argument("--status", required=True, help="特征提取结果: 1 成功 / 0 失败")
+    parser.add_argument("--status", required=True, help="OCR 结果: 1 成功 / 0 失败")
     args = parser.parse_args()
 
     validate_status(args.status)
@@ -96,6 +94,7 @@ def main() -> None:
         print(f"[ERROR] checklist not found: {args.checklist}", file=sys.stderr)
         sys.exit(1)
 
+    # 读 header 找 OCR 列索引(允许列顺序变化)
     with args.checklist.open("r", encoding="utf-8", newline="") as f:
         reader = csv.reader(f)
         try:
@@ -104,13 +103,13 @@ def main() -> None:
             print(f"[ERROR] checklist is empty: {args.checklist}", file=sys.stderr)
             sys.exit(1)
 
-    if FEATURE_COL not in header:
-        print(f"[ERROR] column {FEATURE_COL!r} not in checklist header", file=sys.stderr)
+    if OCR_COL not in header:
+        print(f"[ERROR] column {OCR_COL!r} not in checklist header", file=sys.stderr)
         sys.exit(1)
-    col_idx = header.index(FEATURE_COL)
+    ocr_col_idx = header.index(OCR_COL)
 
-    update_row(args.checklist, args.filename, args.status, col_idx)
-    print(f"[OK] Feature Extract={args.status} for {args.filename}")
+    update_row(args.checklist, args.filename, args.status, ocr_col_idx)
+    print(f"[OK] OCR={args.status} for {args.filename}")
 
 
 if __name__ == "__main__":

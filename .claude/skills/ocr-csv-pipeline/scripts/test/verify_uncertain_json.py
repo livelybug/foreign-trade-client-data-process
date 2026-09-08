@@ -3,7 +3,7 @@
 不在 pytest 套件内(它需要看子进程真实并发时文件系统行为,放在 tmp 隔离目录跑,不污染仓库)。
 
 跑法:
-    uv run python code/test/verify_uncertain_json.py
+    .venv/bin/python .claude/skills/ocr-csv-pipeline/scripts/test/verify_uncertain_json.py
 
 覆盖 5 条契约:
     1. 顶层必须是 dict,不是 list / scalar
@@ -22,8 +22,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-SCRIPT = PROJECT_ROOT / "code" / "03-tmp-csv.py"
+PROJECT_ROOT = Path(__file__).resolve().parents[5]
+SCRIPTS = PROJECT_ROOT / ".claude" / "skills" / "ocr-csv-pipeline" / "scripts"
+VENV_PY = PROJECT_ROOT / ".venv" / "bin" / "python"
+SCRIPT = SCRIPTS / "03-tmp-csv.py"
 
 
 def _run_03(tmp: Path, txt_name: str, items: list[dict]) -> None:
@@ -35,7 +37,7 @@ def _run_03(tmp: Path, txt_name: str, items: list[dict]) -> None:
     unc = tmp / "unc.json"
     cp = subprocess.run(
         [
-            "uv", "run", "python", str(SCRIPT),
+            str(VENV_PY), str(SCRIPT),
             "--txt", str(txt),
             "--field-table", str(ft),
             "--values", "a,b,c",
@@ -99,7 +101,7 @@ def main() -> None:
                 txt.write_text("dummy", encoding="utf-8")
                 return subprocess.run(
                     [
-                        "uv", "run", "python", str(SCRIPT),
+                        str(VENV_PY), str(SCRIPT),
                         "--txt", str(txt),
                         "--field-table", str(ft2),
                         "--values", "a,b,c",

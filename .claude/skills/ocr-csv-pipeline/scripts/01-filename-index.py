@@ -1,7 +1,7 @@
 """01-filename-index.py — 扫描 raw_data/*.png 生成 checklist CSV。
 
 用法:
-    python code/01-filename-index.py \\
+    .venv/bin/python "$SKILL/scripts/01-filename-index.py" \\
         --raw-dir raw_data \\
         --output processed_data/names-checklist.csv
 

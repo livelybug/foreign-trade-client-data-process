@@ -1,7 +1,7 @@
 """03-NLP-check.py — 验证 checklist 的 Feature Extract 列与临时 CSV 一致性。
 
 用法:
-    python code/03-NLP-check.py \\
+    .venv/bin/python "$SKILL/scripts/03-NLP-check.py" \\
         --checklist processed_data/names-checklist.csv \\
         --csvs-dir processed_data/csvs/
 

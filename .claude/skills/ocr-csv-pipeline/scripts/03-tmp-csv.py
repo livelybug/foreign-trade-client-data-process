@@ -2,14 +2,14 @@
 
 用法:
     # 基本用法(无不确定):
-    python code/03-tmp-csv.py \\
+    .venv/bin/python "$SKILL/scripts/03-tmp-csv.py" \\
         --txt processed_data/txts/2011-08-12 1.txt \\
         --field-table raw_data/tg_features.csv \\
         --values "ACME Corp,USA,分销商,,..." \\
         --output processed_data/csvs/2011-08-12 1.csv
 
     # 携带不确定清单(子 Agent 把提取过程中遇到的不确定点以 JSON 数组传入):
-    python code/03-tmp-csv.py \\
+    .venv/bin/python "$SKILL/scripts/03-tmp-csv.py" \\
         --txt processed_data/txts/2011-08-12 1.txt \\
         --field-table raw_data/tg_features.csv \\
         --values "ACME Corp,USA,分销商,,..." \\

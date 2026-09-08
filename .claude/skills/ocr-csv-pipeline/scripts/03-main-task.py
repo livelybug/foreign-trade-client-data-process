@@ -15,9 +15,9 @@ round's intermediate CSV). It performs the same four contract checks:
 The original bash comments ①-⑥ are preserved below as Python comments, mapping
 each step of the legacy inline check to its Python equivalent.
 
-Usage (must go through ``uv run``):
+Usage (run with the project-root ``.venv`` interpreter):
 
-    uv run python code/03-main-task.py \\
+    .venv/bin/python "$SKILL/scripts/03-main-task.py" \\
         --basename "2011-08-12 1" \\
         --basename "2011-08-12 2" \\
         --basename "2011-08-14 1"

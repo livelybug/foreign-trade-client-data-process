@@ -3,7 +3,7 @@
 与 test_02_write_OCR.py 对称: 写入目标列从 OCR 换为 Feature Extract,逻辑相同。
 
 参照 test_01_filename_index.py 风格:
-  * subprocess + uv run 跑真实脚本
+  * subprocess + .venv/bin/python 跑真实脚本
   * tmp_path 隔离
   * happy path + 关键错误分支 + 并发写
 
@@ -24,19 +24,21 @@ from pathlib import Path
 import pytest
 
 # ---- 路径常量 ----
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[5]
 VENV_DIR = PROJECT_ROOT / ".venv"
-REQUIREMENTS = PROJECT_ROOT / "code" / "requirements.txt"
-SCRIPT = PROJECT_ROOT / "code" / "03-write-feature.py"
+VENV_PY = VENV_DIR / "bin" / "python"
+SCRIPTS = PROJECT_ROOT / ".claude" / "skills" / "ocr-csv-pipeline" / "scripts"
+REQUIREMENTS = SCRIPTS / "requirements.txt"
+SCRIPT = SCRIPTS / "03-write-feature.py"
 
 
 # ---- 环境自检 ----
 
 def _venv_ready() -> bool:
-    if not VENV_DIR.exists():
+    if not VENV_PY.exists():
         return False
     return subprocess.run(
-        ["uv", "run", "python", "-c", "import filelock"],
+        [str(VENV_PY), "-c", "import filelock"],
         cwd=PROJECT_ROOT, capture_output=True,
     ).returncode == 0
 
@@ -45,10 +47,10 @@ def _venv_ready() -> bool:
 def _ensure_env() -> None:
     if _venv_ready():
         return
-    if not VENV_DIR.exists():
-        subprocess.run(["uv", "venv"], cwd=PROJECT_ROOT, check=True)
+    if not VENV_PY.exists():
+        subprocess.run(["python3", "-m", "venv", str(VENV_DIR)], cwd=PROJECT_ROOT, check=True)
     subprocess.run(
-        ["uv", "pip", "install", "-r", str(REQUIREMENTS)],
+        [str(VENV_PY), "-m", "pip", "install", "-r", str(REQUIREMENTS)],
         cwd=PROJECT_ROOT, check=True,
     )
 
@@ -57,7 +59,7 @@ def _ensure_env() -> None:
 
 def _run(checklist: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["uv", "run", "python", str(SCRIPT), "--checklist", str(checklist), *args],
+        [str(VENV_PY), str(SCRIPT), "--checklist", str(checklist), *args],
         cwd=PROJECT_ROOT, capture_output=True, text=True,
     )
 
@@ -154,12 +156,12 @@ def test_concurrent_writes_both_succeed(tmp_path: Path) -> None:
     _seed_checklist(p)
 
     p1 = subprocess.Popen(
-        ["uv", "run", "python", str(SCRIPT),
+        [str(VENV_PY), str(SCRIPT),
          "--checklist", str(p), "--filename", "img-1.png", "--status", "1"],
         cwd=PROJECT_ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
     p2 = subprocess.Popen(
-        ["uv", "run", "python", str(SCRIPT),
+        [str(VENV_PY), str(SCRIPT),
          "--checklist", str(p), "--filename", "img-3.png", "--status", "0"],
         cwd=PROJECT_ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )

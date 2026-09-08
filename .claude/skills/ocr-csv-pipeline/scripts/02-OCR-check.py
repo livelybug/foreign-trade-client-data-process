@@ -1,7 +1,7 @@
 """02-OCR-check.py — 验证 checklist 的 OCR 列与 txt 文件一致性。
 
 用法:
-    python code/02-OCR-check.py \\
+    .venv/bin/python "$SKILL/scripts/02-OCR-check.py" \\
         --checklist processed_data/names-checklist.csv \\
         --txts-dir processed_data/txts/
 

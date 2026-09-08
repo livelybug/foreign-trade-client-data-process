@@ -1,6 +1,6 @@
 # Foreign Trade Client Data Process
 
-把外贸客户名片图片（PNG）走 OCR + NLP 抽取成结构化 CSV 的流水线。整条流水线由 `code/` 下的 7 个 Python 脚本驱动，每个脚本职责单一，详情见 [`code/py-doc.md`](code/py-doc.md)。
+把外贸客户名片图片（PNG）走 OCR + NLP 抽取成结构化 CSV 的流水线。整条流水线由 `.claude/skills/ocr-csv-pipeline/scripts/` 下的 7 个 Python 脚本驱动，每个脚本职责单一，详情见 [`.claude/skills/ocr-csv-pipeline/scripts/py-doc.md`](.claude/skills/ocr-csv-pipeline/scripts/py-doc.md)。
 
 ```
 raw_data/*.png  ──▶  01-filename-index  ──▶  names-checklist.csv
@@ -37,38 +37,24 @@ raw_data/*.png  ──▶  01-filename-index  ──▶  names-checklist.csv
 
 ## 1. 环境要求
 
-- **Python**：3.10+
-- **uv**：>= 0.4。`uv` 
+- **Python**：3.10+（自带 `venv` / `pip`，无需安装其它工具）
 
 ---
 
-## 2. 创建并激活虚拟环境
+## 2. 创建虚拟环境
 
 在 **项目根目录**（即 `README.md` 所在目录）执行：
 
-### 推荐：用 `uv run` 一把搞定（无需手动激活）
-
 ```bash
-# 一次性建虚拟环境 + 装依赖
-uv venv
-uv pip install -r code/requirements.txt
+# 一次性建虚拟环境 + 装依赖（唯一第三方依赖 filelock）
+python3 -m venv .venv
+.venv/bin/pip install -r .claude/skills/ocr-csv-pipeline/scripts/requirements.txt
 ```
 
-之后所有命令都加 `uv run` 前缀即可，例如：
+之后所有命令都用 `.venv/bin/python` 直接跑（无需激活），例如：
 
 ```bash
-uv run python code/01-filename-index.py --raw-dir raw_data --output processed_data/names-checklist.csv
-```
-
-### 备选：传统方式（手动激活 venv）
-
-```bash
-uv venv
-source .venv/bin/activate              # Linux / macOS
-# .venv\Scripts\activate               # Windows PowerShell
-
-uv pip install -r code/requirements.txt
-python code/01-filename-index.py --raw-dir raw_data --output processed_data/names-checklist.csv
+.venv/bin/python .claude/skills/ocr-csv-pipeline/scripts/01-filename-index.py --raw-dir raw_data --output processed_data/names-checklist.csv
 ```
 
 ---
@@ -114,13 +100,7 @@ rm -f processed_data/names-checklist.csv
 ### 4.2 执行
 
 ```bash
-# 用 uv run
-uv run python code/01-filename-index.py \
-    --raw-dir raw_data \
-    --output processed_data/names-checklist.csv
-
-# 或在已激活 venv 中
-python code/01-filename-index.py \
+.venv/bin/python .claude/skills/ocr-csv-pipeline/scripts/01-filename-index.py \
     --raw-dir raw_data \
     --output processed_data/names-checklist.csv
 ```
@@ -168,67 +148,67 @@ cut -d, -f1 processed_data/names-checklist.csv | tail -n +2 | grep -q "2011-08-1
 
 ```bash
 # 目录不存在
-uv run python code/01-filename-index.py --raw-dir /no/such/dir --output /tmp/x.csv
+.venv/bin/python .claude/skills/ocr-csv-pipeline/scripts/01-filename-index.py --raw-dir /no/such/dir --output /tmp/x.csv
 echo "exit=$?"   # 期望 exit=1
 
 # 目录里没 .png
-uv run python code/01-filename-index.py --raw-dir processed_data --output /tmp/x.csv
+.venv/bin/python .claude/skills/ocr-csv-pipeline/scripts/01-filename-index.py --raw-dir processed_data --output /tmp/x.csv
 echo "exit=$?"   # 期望 exit=1
 ```
 
 ### 4.5 自动测试
 
-`code/test/` 下有 7 个端到端 pytest 测试文件 + 1 个独立验证脚本：
+`.claude/skills/ocr-csv-pipeline/scripts/test/` 下有 7 个端到端 pytest 测试文件 + 1 个独立验证脚本：
 
 - **pytest 测试**（7 个）：`test_<脚本同名>.py`，每个对应一个被测脚本，覆盖成功路径、错误路径，写脚本的还含并发路径。
-- **独立验证脚本**（1 个）：`verify_uncertain_json.py`，不在 pytest 套件内（因为要看真实子进程并发的文件系统行为），用 `uv run python` 直接跑。详见 [§4.6](#46-独立验证脚本)。
+- **独立验证脚本**（1 个）：`verify_uncertain_json.py`，不在 pytest 套件内（因为要看真实子进程并发的文件系统行为），用 `.venv/bin/python` 直接跑。详见 [§4.6](#46-独立验证脚本)。
 
 测试机制：
 
-- `uv run --with pytest pytest` — uv 在临时 venv 里装 pytest 并运行，不依赖项目 `.venv` 是否就绪
-- 测试内部的 `_ensure_env` fixture 跑 `uv venv` + `uv pip install -r code/requirements.txt`，自动建项目 venv 和装 `filelock`
-- 测试用 `uv run python code/<script>.py ...` 跑被测脚本（自动走项目 venv）
-- 第一次跑会触发 venv 创建 + 装 filelock + 装 pytest；之后环境已就绪，直接进入测试
+- 先 `.venv/bin/pip install pytest` 一次性装 pytest（仅跑测试需要，流水线本身不需要）
+- 测试内部的 `_ensure_env` fixture 跑 `python3 -m venv .venv` + `.venv/bin/pip install -r .../scripts/requirements.txt`，自动建项目 venv 和装 `filelock`
+- 测试用 `.venv/bin/python .../scripts/<script>.py ...` 跑被测脚本
+- 第一次跑会触发 venv 创建 + 装 filelock；之后环境已就绪，直接进入测试
 
 按步骤分别跑：
 
 ```bash
-# 步骤 01：文件索引构建（code/01-filename-index.py）
-uv run --with pytest pytest code/test/test_01_filename_index.py -v
+# 步骤 01：文件索引构建（.claude/skills/ocr-csv-pipeline/scripts/01-filename-index.py）
+.venv/bin/python -m pytest .claude/skills/ocr-csv-pipeline/scripts/test/test_01_filename_index.py -v
 
-# 步骤 02：OCR 验证（code/02-OCR-check.py）
-uv run --with pytest pytest code/test/test_02_OCR_check.py -v
+# 步骤 02：OCR 验证（.claude/skills/ocr-csv-pipeline/scripts/02-OCR-check.py）
+.venv/bin/python -m pytest .claude/skills/ocr-csv-pipeline/scripts/test/test_02_OCR_check.py -v
 
-# 步骤 02：OCR 结果写入（code/02-write-OCR.py）
-uv run --with pytest pytest code/test/test_02_write_OCR.py -v
+# 步骤 02：OCR 结果写入（.claude/skills/ocr-csv-pipeline/scripts/02-write-OCR.py）
+.venv/bin/python -m pytest .claude/skills/ocr-csv-pipeline/scripts/test/test_02_write_OCR.py -v
 
-# 步骤 03：临时 CSV 生成（code/03-tmp-csv.py）
-uv run --with pytest pytest code/test/test_03_tmp_csv.py -v
+# 步骤 03：临时 CSV 生成（.claude/skills/ocr-csv-pipeline/scripts/03-tmp-csv.py）
+.venv/bin/python -m pytest .claude/skills/ocr-csv-pipeline/scripts/test/test_03_tmp_csv.py -v
 
-# 步骤 03：特征提取结果写入（code/03-write-feature.py）
-uv run --with pytest pytest code/test/test_03_write_feature.py -v
+# 步骤 03：特征提取结果写入（.claude/skills/ocr-csv-pipeline/scripts/03-write-feature.py）
+.venv/bin/python -m pytest .claude/skills/ocr-csv-pipeline/scripts/test/test_03_write_feature.py -v
 
-# 步骤 03：NLP 验证（code/03-NLP-check.py）
-uv run --with pytest pytest code/test/test_03_NLP_check.py -v
+# 步骤 03：NLP 验证（.claude/skills/ocr-csv-pipeline/scripts/03-NLP-check.py）
+.venv/bin/python -m pytest .claude/skills/ocr-csv-pipeline/scripts/test/test_03_NLP_check.py -v
 
-# 步骤 04：数据合并（code/04-merge.py）
-uv run --with pytest pytest code/test/test_04_merge.py -v
+# 步骤 04：数据合并（.claude/skills/ocr-csv-pipeline/scripts/04-merge.py）
+.venv/bin/python -m pytest .claude/skills/ocr-csv-pipeline/scripts/test/test_04_merge.py -v
 ```
 
 一键全跑：
 
 ```bash
-uv run --with pytest pytest code/test/ -v
+.venv/bin/python -m pytest .claude/skills/ocr-csv-pipeline/scripts/test/ -v
 ```
 
 ### 4.6 独立验证脚本
 
-`code/test/verify_uncertain_json.py` 不在 pytest 套件内——它需要起真实子进程并发跑 `03-tmp-csv.py` 看文件系统的 read-modify-write 行为，pytest 的 `tmp_path` 隔离与单进程 fixture 不适合这个场景。脚本用 `tempfile.mkdtemp` 在 `/tmp` 起隔离目录，对仓库无副作用。
+`.claude/skills/ocr-csv-pipeline/scripts/test/verify_uncertain_json.py` 不在 pytest 套件内——它需要起真实子进程并发跑 `03-tmp-csv.py` 看文件系统的 read-modify-write 行为，pytest 的 `tmp_path` 隔离与单进程 fixture 不适合这个场景。脚本用 `tempfile.mkdtemp` 在 `/tmp` 起隔离目录，对仓库无副作用。
 
 跑法：
 
 ```bash
-uv run python code/test/verify_uncertain_json.py
+.venv/bin/python .claude/skills/ocr-csv-pipeline/scripts/test/verify_uncertain_json.py
 ```
 
 输出形如：
@@ -258,7 +238,7 @@ uv run python code/test/verify_uncertain_json.py
 
 | 现象 | 可能原因 | 解决 |
 |------|----------|------|
-| `ModuleNotFoundError: No module named 'filelock'` | 没装依赖 / 用了非 venv 的 python | `uv pip install -r code/requirements.txt`，并确认命令走 `uv run python` |
+| `ModuleNotFoundError: No module named 'filelock'` | 没装依赖 / 用了非 venv 的 python | `.venv/bin/pip install -r .claude/skills/ocr-csv-pipeline/scripts/requirements.txt`，并确认命令用 `.venv/bin/python` |
 | 行尾变 `\r\n` | 用普通 `open()` 替代了 `csv` 模块 | 检查脚本里是否有 `open(..., newline="")` 和 `lineterminator="\n"` |
 | checklist 写入后中文乱码 | 文件被外部编辑器另存为 GBK | 始终用 UTF-8 打开/写入；不要用 Excel 直接保存 |
 | 02 阶段 lock 超时 | 两个进程同时抢锁 / 死锁 | 检查 `.lock` 文件是否残留，必要时 `rm -f processed_data/names-checklist.csv.lock` |

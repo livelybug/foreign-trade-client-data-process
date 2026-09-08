@@ -1,7 +1,7 @@
 """04-merge.py — 合并所有 Feature Extract=1 的临时 CSV 为 final.csv。
 
 用法:
-    python code/04-merge.py \\
+    .venv/bin/python "$SKILL/scripts/04-merge.py" \\
         --checklist processed_data/names-checklist.csv \\
         --csvs-dir processed_data/csvs/ \\
         --output processed_data/final.csv
