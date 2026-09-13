@@ -28,6 +28,31 @@
 
 ---
 
+## 1-checklist-check.py
+
+### 功能描述
+
+对 `01-filename-index.py` 生成的 checklist 批量执行 4 项校验：文件存在；表头为 `Filename,OCR,Feature Extract`；数据行数等于 raw 目录下 `.png` 文件数；第 1 个数据行的 Filename 等于 ASCII 排序后的第 1 个 `.png` 文件名（用 csv 标准解析取字段，支持含逗号的文件名）。
+
+### 输入参数
+
+| 参数 | 含义 | 示例值 |
+|------|------|--------|
+| `--checklist` | checklist CSV 文件路径（默认 `processed_data/names-checklist.csv`） | `processed_data/names-checklist.csv` |
+| `--raw-dir` | 存放 PNG 图片的目录路径（默认 `raw_data`） | `raw_data` |
+
+### 输出
+
+- 逐项打印 `--- check N: ---` 与 `[OK]` / `[FAIL] ...`（FAIL 附带具体值便于定位）
+- 全部通过：末行 `--- all 4 checks passed ---`，exit code 0
+- 任一项失败：立即 exit code 1
+
+### 错误处理
+
+- checklist 缺失 / 表头不符 / 行数不符 / 顺序不符 → 打印 `[FAIL]` 并 exit code 1
+
+---
+
 ## 02-write-OCR.py
 
 ### 功能描述
@@ -83,6 +108,101 @@
 
 - checklist 或 txts 目录不存在 → 报错退出（exit code 1）
 - 任何验证不通过 → 退出码 1，输出详细差异
+
+---
+
+## 2-txt-check.py
+
+### 功能描述
+
+OCR 调度轮内批量检查本轮 PNG 对应的 txt 是否满足契约：文件存在、大小 > 0、去除全部空白后非空。仅输出逐文件状态行供主 Agent 解析，不修改任何文件。
+
+### 输入参数
+
+| 参数 | 含义 | 示例值 |
+|------|------|--------|
+| `--txts-dir` | OCR 输出的 txt 文件目录（默认 `processed_data/txts`） | `processed_data/txts/` |
+| `pngs`（位置参数，≥1 个） | 本调度轮的 PNG 文件名列表 | `"2011-08-12 1.png"` |
+
+### 输出
+
+- 每个文件一行：`[OK] <f>` 或 `[MISSING/EMPTY] <f>`（`.png` 后缀替换为 `.txt`，文件名其余部分原样保留）
+- 恒 exit code 0（成功/失败由主 Agent 解析输出得出）
+
+### 错误处理
+
+- 无失败退出码；txt 缺失 / 空 / 只含空白 → 该文件报 `[MISSING/EMPTY]`
+
+---
+
+## 3-read-header.py
+
+### 功能描述
+
+读取字段表 CSV 第 1 行作为表头原文并打印，是第 3 步的全局唯一权威来源（后续由主 Agent 嵌入子 Agent 提示词的 `FIELD_HEADER` 代码块）。
+
+### 输入参数
+
+| 参数 | 含义 | 示例值 |
+|------|------|--------|
+| `--field-table` | 字段表 CSV 路径（默认 `raw_data/tg_features.csv`） | `raw_data/tg_features.csv` |
+
+### 输出
+
+- 成功：`[OK] hdr=<表头原文>`，exit code 0
+- 失败：`[FAIL] ... 读取失败: ...` 或 `[FAIL] ... 表头为空`，exit code 1
+
+### 错误处理
+
+- 文件缺失 / 不可读 → 报错退出（exit code 1）
+- 第 1 行为空 → 报错退出（exit code 1）
+
+---
+
+## 3-list-option-jsons.py
+
+### 功能描述
+
+按 ASCII 顺序枚举 `prompts/option_category/` 下全部 `.json` 并逐行打印路径，供人工确认文件集及其与 `OPTIONS_BLOCK` / `HIERARCHY_BLOCK` 的对应关系。
+
+### 输入参数
+
+| 参数 | 含义 | 示例值 |
+|------|------|--------|
+| `--dir` | option_category 目录路径（默认 `prompts/option_category`） | `prompts/option_category` |
+
+### 输出
+
+- 成功：每个 `.json` 一行路径（ASCII 排序），exit code 0
+- 失败：`[FAIL] <dir> 下没有任何 .json`，exit code 1
+
+### 错误处理
+
+- 目录不存在或目录下没有任何 `.json` → 报错退出（exit code 1）
+
+---
+
+## 3-load-option-jsons.py
+
+### 功能描述
+
+按 `3-list-option-jsons.py` 枚举 + 人工确认后的文件清单，逐个校验 JSON 文件可读且非空（等价于原 shell 的 `cat` 到变量 + 非空校验）。文件内容本身仍由主 Agent 用 Read 工具读取后嵌入子 Agent 提示词。
+
+### 输入参数
+
+| 参数 | 含义 | 示例值 |
+|------|------|--------|
+| `--json`（可重复传，≥1 个） | 待校验的 JSON 文件路径 | `prompts/option_category/subdivision-options.json` |
+
+### 输出
+
+- 成功：`[OK] N json loaded`，exit code 0
+- 失败：`[FAIL] <basename> 缺失或为空`，exit code 1
+
+### 错误处理
+
+- 任一文件缺失 / 为空 / 只含换行 / 解码失败 → 指名该文件报错退出（exit code 1）
+- 未传 `--json` → argparse 报错退出（exit code 2）
 
 ---
 
