@@ -1,6 +1,13 @@
 .tmp
 *.csv.lock
 *.md.lock
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/ocr-csv-pipeline/
+!.claude/skills/ocr-csv-pipeline/**
+.agents
+docs
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

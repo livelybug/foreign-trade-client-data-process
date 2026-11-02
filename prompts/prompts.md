@@ -222,18 +222,32 @@ uv run python code/02-OCR-check.py \
    [ -n "$hdr" ] || { echo "[FAIL] raw_data/tg_features.csv 表头为空"; exit 1; }
    echo "[OK] hdr=$hdr"
    ```
+   - **人工确认（human-in-the-loop）**：把读到的 `hdr` 原文完整展示给用户，请用户确认 `raw_data/tg_features.csv` 的字段名与列序是否正确；确认前不得继续。用户要求修改时**停下**，等其改完文件后重新读取并再次确认。
    - 表头列数不固定；**禁止硬编码字段列表，禁止增删改列**。
    - 后续每调度轮派发 `max_concurrency` 个子 Agent 时，每份子 Agent 提示词都必须把 `$hdr` 字符串原文嵌入到 `FIELD_HEADER` 代码块；**子 Agent 不要再 Read `raw_data/tg_features.csv`**。
-3. **一次性**读取项目级动态配置到 shell 变量 `opts` / `hier`（**字段名清单因项目而异，禁止硬编码**）：
-   ```bash
-   opts=$(cat prompts/option_category/subdivision-options.json)
-   [ -n "$opts" ] || { echo "[FAIL] subdivision-options.json 缺失或为空"; exit 1; }
-   hier=$(cat prompts/option_category/option-hierarchy.json)
-   [ -n "$hier" ] || { echo "[FAIL] option-hierarchy.json 缺失或为空"; exit 1; }
-   echo "[OK] opts+hier loaded"
-   ```
-   - 这两个 JSON 内容**逐项目不同**：键名集合、各 key 下的 `细分选项` 数组、evidence 结构都可能变。
-   - 后续每调度轮派发 `max_concurrency` 个子 Agent 时，每份子 Agent 提示词都必须把 `$opts` 字符串原文嵌入到 `OPTIONS_BLOCK` 代码块、`$hier` 字符串原文嵌入到 `HIERARCHY_BLOCK` 代码块；**子 Agent 不要再 Read 这两个 JSON**。
+3. **一次性**加载项目级动态配置到 shell 变量（**文件清单动态发现，禁止硬编码文件名**）：
+   - 先**动态枚举** `prompts/option_category/` 下全部 `.json`：
+     ```bash
+     shopt -s nullglob
+     files=(prompts/option_category/*.json)
+     [ "${#files[@]}" -gt 0 ] || { echo "[FAIL] prompts/option_category/ 下没有任何 .json"; exit 1; }
+     printf '%s\n' "${files[@]}"
+     ```
+   - **人工确认（human-in-the-loop）**：把枚举到的文件清单展示给用户，请用户确认：
+     - 文件集是否正确（有无缺失 / 多余 / 需要先修改的内容）；
+     - 各文件与代码块的对应关系（哪个注入 `OPTIONS_BLOCK`、哪个注入 `HIERARCHY_BLOCK`）；
+     - 文件集与下方示例不一致时，是否需要同步更新下方示例块。
+     - 确认通过才继续；否则**停下**，等用户处理完 `prompts/option_category/` 后重新枚举并再次确认。
+   - 按枚举结果**动态生成**加载命令（每个文件一行 `cat` 到对应 shell 变量 + 非空校验），拼成**单条 Bash** 一次执行。当前项目文件集的生成结果示例：
+     ```bash
+     opts=$(cat prompts/option_category/subdivision-options.json)
+     [ -n "$opts" ] || { echo "[FAIL] subdivision-options.json 缺失或为空"; exit 1; }
+     hier=$(cat prompts/option_category/option-hierarchy.json)
+     [ -n "$hier" ] || { echo "[FAIL] option-hierarchy.json 缺失或为空"; exit 1; }
+     echo "[OK] opts+hier loaded"
+     ```
+   - 这些 JSON 内容**逐项目不同**：文件名、键名集合、各 key 下的 `细分选项` 数组、evidence 结构都可能变；示例只示意格式，**文件集变化时按同样规则重新生成，不要照抄示例**。
+   - 后续每调度轮派发 `max_concurrency` 个子 Agent 时，每份子 Agent 提示词都必须把 `$opts` 字符串原文嵌入到 `OPTIONS_BLOCK` 代码块、`$hier` 字符串原文嵌入到 `HIERARCHY_BLOCK` 代码块；**子 Agent 不要再 Read 这些 JSON**。
 4. **核对子 Agent 提示词模板**（LLM 直接阅读对比，不要走脚本）：
    - 本步的子 Agent 提示词由 `code/utils/build_prompts.py` 根据模板生成；**本提示词文件下方"子 Agent 提示词模板"一节是该模板的权威源**，`build_prompts.py` 内部的 `TEMPLATE` 常量是实现副本，**容易与权威源漂移**。
    - 启动第 3 步前必须用 Read 工具读 `code/utils/build_prompts.py`，把 `TEMPLATE = """..."""` 三引号字符串（按 Python 转义还原后）与下方"子 Agent 提示词模板"一节比对：
